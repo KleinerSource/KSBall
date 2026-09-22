@@ -72,7 +72,7 @@ jobs:
           assert_true_entitlement() {
             local key="$1"
             local value
-            if ! value="$(plutil -extract "$key" raw -expect bool artifact/KSBall.entitlements.plist)"; then
+            if ! value="$(/usr/libexec/PlistBuddy -c "Print :$key" artifact/KSBall.entitlements.plist)"; then
               echo "::error title=Missing entitlement::$key was not exported by ldid"
               return 1
             fi
