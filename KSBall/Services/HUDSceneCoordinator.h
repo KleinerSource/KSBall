@@ -12,10 +12,12 @@ FOUNDATION_EXPORT BOOL KSBallPrepareFrontBoardSystemShell(void);
 
 @property (nonatomic, readonly, getter=isHUDActive) BOOL HUDActive;
 @property (nonatomic, readonly, getter=isFrontBoardReady) BOOL frontBoardReady;
+@property (nonatomic, copy, readonly) NSString *frontBoardStatusDescription;
 
 + (instancetype)sharedCoordinator;
 - (instancetype)initWithSettingsStore:(KSBallSettingsStore *)settingsStore applicationBridge:(SystemApplicationBridge *)applicationBridge;
 - (void)activateHUD;
+- (void)rebuildHUD;
 - (void)deactivateHUD;
 - (void)connectHUDWindow:(UIWindow *)window session:(UISceneSession *)session;
 - (void)disconnectHUDSession:(UISceneSession *)session;

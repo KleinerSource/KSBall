@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build unsigned IPA
+    name: Build TrollStore TIPA
     runs-on: macos-15
 
     steps:
@@ -45,7 +45,7 @@ jobs:
             CODE_SIGN_IDENTITY='' \
             build | tee xcodebuild.log
 
-      - name: Package unsigned IPA
+      - name: Package TrollStore TIPA
         env:
           DERIVED_DATA: ${{ runner.temp }}/KSBallDerivedData
         run: |
@@ -53,17 +53,22 @@ jobs:
           app_path="$DERIVED_DATA/Build/Products/Release-iphoneos/KSBall.app"
           test -d "$app_path"
           mkdir -p artifact/Payload
+          codesign --force --sign - --entitlements "$GITHUB_WORKSPACE/KSBall/KSBall.entitlements" "$app_path"
+          codesign -d --entitlements :- "$app_path" > artifact/KSBall.entitlements.plist 2>/dev/null
+          test "$(plutil -extract 'platform-application' raw -expect bool artifact/KSBall.entitlements.plist)" = 'true'
+          test "$(plutil -extract 'com.apple.private.security.no-sandbox' raw -expect bool artifact/KSBall.entitlements.plist)" = 'true'
           cp -R "$app_path" artifact/Payload/KSBall.app
-          ditto -c -k --sequesterRsrc --keepParent artifact/Payload artifact/KSBall-unsigned.tipa
-          shasum -a 256 artifact/KSBall-unsigned.tipa | tee artifact/KSBall-unsigned.tipa.sha256
+          ditto -c -k --sequesterRsrc --keepParent artifact/Payload artifact/KSBall.tipa
+          shasum -a 256 artifact/KSBall.tipa | tee artifact/KSBall.tipa.sha256
 
-      - name: Upload unsigned IPA and build log
+      - name: Upload TIPA and build log
         uses: actions/upload-artifact@v7
         with:
-          name: KSBall-unsigned-${{ github.sha }}
+          name: KSBall-${{ github.sha }}
           path: |
-            artifact/KSBall-unsigned.tipa
-            artifact/KSBall-unsigned.tipa.sha256
+            artifact/KSBall.tipa
+            artifact/KSBall.tipa.sha256
+            artifact/KSBall.entitlements.plist
             xcodebuild.log
           if-no-files-found: error
           retention-days: 14
@@ -77,10 +82,13 @@ jobs:
       contents: write
 
     steps:
-      - name: Download unsigned IPA
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Download TIPA
         uses: actions/download-artifact@v8
         with:
-          name: KSBall-unsigned-${{ github.sha }}
+          name: KSBall-${{ github.sha }}
           path: release
 
       - name: Create or update release
@@ -91,8 +99,8 @@ jobs:
         run: |
           set -euo pipefail
           find release -type f -print
-          tipa_path="$(find release -type f -name 'KSBall-unsigned.tipa' -print -quit)"
-          checksum_path="$(find release -type f -name 'KSBall-unsigned.tipa.sha256' -print -quit)"
+          tipa_path="$(find release -type f -name 'KSBall.tipa' -print -quit)"
+          checksum_path="$(find release -type f -name 'KSBall.tipa.sha256' -print -quit)"
           build_log_path="$(find release -type f -name 'xcodebuild.log' -print -quit)"
           test -n "$tipa_path"
           test -n "$checksum_path"

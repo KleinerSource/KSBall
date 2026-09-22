@@ -59,15 +59,15 @@
         return @[];
     }
 
-    SEL applicationsSelector = NSSelectorFromString(@"allInstalledApplications");
-    if (![workspace respondsToSelector:applicationsSelector]) {
-        applicationsSelector = NSSelectorFromString(@"allApplications");
+    // TrollStore 应用在 iOS 15-17 上可靠地公开于 allApplications；
+    // allInstalledApplications 在部分版本会返回空数组。
+    NSArray *proxies = [self applicationProxiesFromWorkspace:workspace];
+    if (proxies.count == 0) {
+        proxies = [self enumeratedApplicationProxiesFromWorkspace:workspace];
     }
-    if (![workspace respondsToSelector:applicationsSelector]) {
+    if (proxies.count == 0) {
         return @[];
     }
-
-    NSArray *proxies = ((id (*)(id, SEL))objc_msgSend)(workspace, applicationsSelector);
     NSMutableArray<KSBallApplication *> *applications = [NSMutableArray array];
     NSString *ownIdentifier = NSBundle.mainBundle.bundleIdentifier.lowercaseString;
     for (id proxy in proxies) {
@@ -89,6 +89,41 @@
     return [applications sortedArrayUsingComparator:^NSComparisonResult(KSBallApplication *left, KSBallApplication *right) {
         return [left.displayName localizedCaseInsensitiveCompare:right.displayName];
     }];
+}
+
+- (NSArray *)applicationProxiesFromWorkspace:(id)workspace {
+    SEL selector = NSSelectorFromString(@"allApplications");
+    if ([workspace respondsToSelector:selector]) {
+        id proxies = ((id (*)(id, SEL))objc_msgSend)(workspace, selector);
+        if ([proxies isKindOfClass:NSArray.class]) {
+            return proxies;
+        }
+    }
+
+    selector = NSSelectorFromString(@"allInstalledApplications");
+    if ([workspace respondsToSelector:selector]) {
+        id proxies = ((id (*)(id, SEL))objc_msgSend)(workspace, selector);
+        if ([proxies isKindOfClass:NSArray.class]) {
+            return proxies;
+        }
+    }
+    return @[];
+}
+
+- (NSArray *)enumeratedApplicationProxiesFromWorkspace:(id)workspace {
+    SEL selector = NSSelectorFromString(@"enumerateApplicationsOfType:block:");
+    if (![workspace respondsToSelector:selector]) {
+        return @[];
+    }
+
+    NSMutableArray *proxies = [NSMutableArray array];
+    void (^collector)(id, BOOL *) = ^(id proxy, BOOL *stop) {
+        if (proxy) {
+            [proxies addObject:proxy];
+        }
+    };
+    ((void (*)(id, SEL, NSInteger, id))objc_msgSend)(workspace, selector, 0, collector);
+    return proxies;
 }
 
 - (BOOL)launchBundleIdentifier:(NSString *)bundleIdentifier {
@@ -136,12 +171,13 @@
 }
 
 - (BOOL)isSystemApplicationProxy:(id)proxy {
-    NSString *applicationType = [self stringValueForObject:proxy selectors:@[@"applicationType"]];
-    if ([applicationType caseInsensitiveCompare:@"System"] == NSOrderedSame) {
-        return YES;
-    }
     SEL selector = NSSelectorFromString(@"isSystemOrInternalApp");
     if ([proxy respondsToSelector:selector] && ((BOOL (*)(id, SEL))objc_msgSend)(proxy, selector)) {
+        return YES;
+    }
+
+    NSString *applicationType = [self stringValueForObject:proxy selectors:@[@"applicationType"]];
+    if ([applicationType caseInsensitiveCompare:@"System"] == NSOrderedSame) {
         return YES;
     }
     selector = NSSelectorFromString(@"isLaunchProhibited");

@@ -51,6 +51,9 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if (section == KSBallConfigurationSectionHUD) {
+        return 2;
+    }
     if (section == KSBallConfigurationSectionShortcuts) {
         return self.settingsStore.settings.shortcuts.count + 1;
     }
@@ -81,7 +84,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section == KSBallConfigurationSectionHUD) {
+    if (indexPath.section == KSBallConfigurationSectionHUD && indexPath.row == 0) {
         UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"HUDCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"HUDCell"];
         cell.textLabel.text = @"启用全局悬浮球";
         UISwitch *toggle = [cell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)cell.accessoryView : nil;
@@ -93,6 +96,14 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
         }
         toggle.on = self.settingsStore.settings.enabled;
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        return cell;
+    }
+
+    if (indexPath.section == KSBallConfigurationSectionHUD) {
+        UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"RebuildHUDCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"RebuildHUDCell"];
+        cell.textLabel.text = @"重新创建悬浮球";
+        cell.detailTextLabel.text = self.hudSceneCoordinator.isHUDActive ? @"已显示" : @"立即重试";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         return cell;
     }
 
@@ -132,7 +143,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"SupportCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"SupportCell"];
     cell.textLabel.text = self.applicationBridge.isAvailable ? @"LaunchServices 可用" : @"LaunchServices 不可用";
-    cell.detailTextLabel.text = self.applicationBridge.isAvailable ? (self.hudSceneCoordinator.frontBoardReady ? @"FrontBoard 系统壳已初始化" : @"启动 HUD 后检测 FrontBoard") : self.applicationBridge.unavailabilityReason;
+    cell.detailTextLabel.text = self.applicationBridge.isAvailable ? self.hudSceneCoordinator.frontBoardStatusDescription : self.applicationBridge.unavailabilityReason;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
 }
@@ -152,6 +163,9 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
             }
         };
         [self.navigationController pushViewController:picker animated:YES];
+    } else if (indexPath.section == KSBallConfigurationSectionHUD && indexPath.row == 1) {
+        [self.hudSceneCoordinator rebuildHUD];
+        [self.tableView reloadData];
     }
 }
 
