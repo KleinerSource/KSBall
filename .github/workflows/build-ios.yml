@@ -45,6 +45,12 @@ jobs:
             CODE_SIGN_IDENTITY='' \
             build | tee xcodebuild.log
 
+      - name: Install ldid
+        run: |
+          set -euo pipefail
+          brew install ldid
+          ldid -h
+
       - name: Package TrollStore TIPA
         env:
           DERIVED_DATA: ${{ runner.temp }}/KSBallDerivedData
@@ -52,9 +58,12 @@ jobs:
           set -euo pipefail
           app_path="$DERIVED_DATA/Build/Products/Release-iphoneos/KSBall.app"
           test -d "$app_path"
+          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
+          executable_path="$app_path/$executable_name"
+          test -f "$executable_path"
           mkdir -p artifact/Payload
-          codesign --force --sign - --entitlements "$GITHUB_WORKSPACE/KSBall/KSBall.entitlements" "$app_path"
-          codesign -d --entitlements :- "$app_path" > artifact/KSBall.entitlements.plist 2>/dev/null
+          ldid -S"$GITHUB_WORKSPACE/KSBall/KSBall.entitlements" "$executable_path"
+          ldid -e "$executable_path" > artifact/KSBall.entitlements.plist
           test "$(plutil -extract 'platform-application' raw -expect bool artifact/KSBall.entitlements.plist)" = 'true'
           test "$(plutil -extract 'com.apple.private.security.no-sandbox' raw -expect bool artifact/KSBall.entitlements.plist)" = 'true'
           cp -R "$app_path" artifact/Payload/KSBall.app
