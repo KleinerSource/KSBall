@@ -26,6 +26,14 @@ typedef int (*KSBallSetPersonaFunction)(const posix_spawnattr_t *attributes, uid
 typedef int (*KSBallSetPersonaUIDFunction)(const posix_spawnattr_t *attributes, uid_t userIdentifier);
 typedef int (*KSBallSetPersonaGIDFunction)(const posix_spawnattr_t *attributes, gid_t groupIdentifier);
 
+static int KSBallConfigureBasicSpawnAttributes(posix_spawnattr_t *attributes) {
+    int result = posix_spawnattr_setpgroup(attributes, 0);
+    if (result != 0) {
+        return result;
+    }
+    return posix_spawnattr_setflags(attributes, KSBallApplicationSpawnFlags);
+}
+
 static BOOL KSBallPrepareFrontBoardSystemShellWithBlock(dispatch_block_t block) {
     static dispatch_once_t onceToken;
     static BOOL ready;
@@ -344,45 +352,96 @@ BOOL KSBallIsHUDProcess(void) {
         self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程属性初始化失败：%s", strerror(result)];
         return NO;
     }
+    BOOL attributesInitialized = YES;
 
     KSBallSetPersonaFunction setPersona = (KSBallSetPersonaFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_np");
     KSBallSetPersonaUIDFunction setPersonaUID = (KSBallSetPersonaUIDFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_uid_np");
     KSBallSetPersonaGIDFunction setPersonaGID = (KSBallSetPersonaGIDFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_gid_np");
-    if (!setPersona || !setPersonaUID || !setPersonaGID) {
-        posix_spawnattr_destroy(&attributes);
-        self.frontBoardStatusDescription = @"当前系统不支持 HUD 子进程 persona 接口。";
-        return NO;
+    BOOL usingPersona = NO;
+    BOOL usedNormalFallback = NO;
+    NSString *personaFailure = nil;
+
+    // persona 是可选优化。缺少权限时会返回 EPERM，不能阻断普通子进程启动。
+    if (setPersona && setPersonaUID && setPersonaGID) {
+        result = setPersona(&attributes, KSBallApplicationPersonaIdentifier, KSBallApplicationPersonaFlags);
+        if (result == 0) {
+            result = setPersonaUID(&attributes, 0);
+        }
+        if (result == 0) {
+            result = setPersonaGID(&attributes, 0);
+        }
+        if (result == 0) {
+            usingPersona = YES;
+        } else {
+            personaFailure = [NSString stringWithUTF8String:strerror(result)];
+            posix_spawnattr_destroy(&attributes);
+            attributesInitialized = NO;
+            result = posix_spawnattr_init(&attributes);
+            if (result == 0) {
+                attributesInitialized = YES;
+                usedNormalFallback = YES;
+            }
+        }
+    } else {
+        personaFailure = @"persona 接口不可用";
+        usedNormalFallback = YES;
     }
 
-    result = setPersona(&attributes, KSBallApplicationPersonaIdentifier, KSBallApplicationPersonaFlags);
     if (result == 0) {
-        result = setPersonaUID(&attributes, 0);
-    }
-    if (result == 0) {
-        result = setPersonaGID(&attributes, 0);
-    }
-    if (result == 0) {
-        result = posix_spawnattr_setpgroup(&attributes, 0);
-    }
-    if (result == 0) {
-        result = posix_spawnattr_setflags(&attributes, KSBallApplicationSpawnFlags);
+        result = KSBallConfigureBasicSpawnAttributes(&attributes);
     }
     if (result != 0) {
-        posix_spawnattr_destroy(&attributes);
-        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程属性初始化失败：%s", strerror(result)];
+        if (attributesInitialized) {
+            posix_spawnattr_destroy(&attributes);
+        }
+        if (personaFailure.length > 0) {
+            self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD persona 属性失败（%@）；普通回退属性初始化失败：%s", personaFailure, strerror(result)];
+        } else {
+            self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程属性初始化失败：%s", strerror(result)];
+        }
         return NO;
     }
 
     pid_t processIdentifier = 0;
     result = posix_spawn(&processIdentifier, executable, NULL, &attributes, arguments, environ);
     posix_spawnattr_destroy(&attributes);
+
+    // 某些系统允许设置 persona 属性，但在真正 spawn 时才因权限返回 EPERM。
+    if (result == EPERM && usingPersona) {
+        personaFailure = @"Operation not permitted";
+        usingPersona = NO;
+        usedNormalFallback = YES;
+        int fallbackInitializationResult = posix_spawnattr_init(&attributes);
+        BOOL fallbackAttributesInitialized = fallbackInitializationResult == 0;
+        result = fallbackInitializationResult;
+        if (result == 0) {
+            result = KSBallConfigureBasicSpawnAttributes(&attributes);
+        }
+        if (result == 0) {
+            result = posix_spawn(&processIdentifier, executable, NULL, &attributes, arguments, environ);
+        }
+        if (fallbackAttributesInitialized) {
+            posix_spawnattr_destroy(&attributes);
+        }
+    }
+
     if (result != 0) {
-        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程启动失败：%s", strerror(result)];
+        if (personaFailure.length > 0) {
+            self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程启动失败：persona %@；普通回退：%s", personaFailure, strerror(result)];
+        } else {
+            self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程启动失败：%s", strerror(result)];
+        }
         return NO;
     }
 
     [NSUserDefaults.standardUserDefaults setInteger:processIdentifier forKey:KSBallHUDProcessIdentifierDefaultsKey];
-    self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程已启动（PID %d）。", processIdentifier];
+    if (usedNormalFallback && personaFailure.length > 0) {
+        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程已启动（PID %d，普通模式；persona 不可用：%@）。", processIdentifier, personaFailure];
+    } else if (usingPersona) {
+        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程已启动（PID %d，persona）。", processIdentifier];
+    } else {
+        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程已启动（PID %d）。", processIdentifier];
+    }
     return YES;
 }
 

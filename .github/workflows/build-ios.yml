@@ -86,6 +86,7 @@ jobs:
             esac
           }
           assert_true_entitlement 'platform-application'
+          assert_true_entitlement 'com.apple.private.persona-mgmt'
           assert_true_entitlement 'com.apple.private.security.no-sandbox'
           cp -R "$app_path" artifact/Payload/KSBall.app
           ditto -c -k --sequesterRsrc --keepParent artifact/Payload artifact/KSBall.tipa
