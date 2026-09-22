@@ -22,6 +22,10 @@ static const short KSBallApplicationSpawnFlags = 2;
 
 extern char **environ;
 
+typedef int (*KSBallSetPersonaFunction)(const posix_spawnattr_t *attributes, uid_t personaIdentifier, uint32_t flags);
+typedef int (*KSBallSetPersonaUIDFunction)(const posix_spawnattr_t *attributes, uid_t userIdentifier);
+typedef int (*KSBallSetPersonaGIDFunction)(const posix_spawnattr_t *attributes, gid_t groupIdentifier);
+
 static BOOL KSBallPrepareFrontBoardSystemShellWithBlock(dispatch_block_t block) {
     static dispatch_once_t onceToken;
     static BOOL ready;
@@ -341,12 +345,21 @@ BOOL KSBallIsHUDProcess(void) {
         return NO;
     }
 
-    result = posix_spawnattr_set_persona_np(&attributes, KSBallApplicationPersonaIdentifier, KSBallApplicationPersonaFlags);
+    KSBallSetPersonaFunction setPersona = (KSBallSetPersonaFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_np");
+    KSBallSetPersonaUIDFunction setPersonaUID = (KSBallSetPersonaUIDFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_uid_np");
+    KSBallSetPersonaGIDFunction setPersonaGID = (KSBallSetPersonaGIDFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_gid_np");
+    if (!setPersona || !setPersonaUID || !setPersonaGID) {
+        posix_spawnattr_destroy(&attributes);
+        self.frontBoardStatusDescription = @"当前系统不支持 HUD 子进程 persona 接口。";
+        return NO;
+    }
+
+    result = setPersona(&attributes, KSBallApplicationPersonaIdentifier, KSBallApplicationPersonaFlags);
     if (result == 0) {
-        result = posix_spawnattr_set_persona_uid_np(&attributes, 0);
+        result = setPersonaUID(&attributes, 0);
     }
     if (result == 0) {
-        result = posix_spawnattr_set_persona_gid_np(&attributes, 0);
+        result = setPersonaGID(&attributes, 0);
     }
     if (result == 0) {
         result = posix_spawnattr_setpgroup(&attributes, 0);
