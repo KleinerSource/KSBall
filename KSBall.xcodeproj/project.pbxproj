@@ -1,0 +1,331 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000200 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* main.m */; };
+		A00000000000000000000201 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000103 /* AppDelegate.m */; };
+		A00000000000000000000202 /* SceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105 /* SceneDelegate.m */; };
+		A00000000000000000000203 /* HUDSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000107 /* HUDSceneDelegate.m */; };
+		A00000000000000000000204 /* KeepSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* KeepSceneDelegate.m */; };
+		A00000000000000000000205 /* KSBallSettings.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000121 /* KSBallSettings.m */; };
+		A00000000000000000000206 /* KSBallSettingsStore.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000123 /* KSBallSettingsStore.m */; };
+		A00000000000000000000207 /* SystemApplicationBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000131 /* SystemApplicationBridge.m */; };
+		A00000000000000000000208 /* HUDSceneCoordinator.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000133 /* HUDSceneCoordinator.m */; };
+		A00000000000000000000209 /* KSBallFanLayout.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000141 /* KSBallFanLayout.m */; };
+		A00000000000000000000210 /* PassthroughHUDWindow.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000143 /* PassthroughHUDWindow.m */; };
+		A00000000000000000000211 /* FloatingHUDViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000145 /* FloatingHUDViewController.m */; };
+		A00000000000000000000212 /* ConfigurationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000147 /* ConfigurationViewController.m */; };
+		A00000000000000000000213 /* AppPickerViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000149 /* AppPickerViewController.m */; };
+		A00000000000000000000230 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000180 /* UIKit.framework */; };
+		A00000000000000000000231 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000181 /* Foundation.framework */; };
+		A00000000000000000000240 /* KSBallSettingsStoreTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000160 /* KSBallSettingsStoreTests.m */; };
+		A00000000000000000000241 /* KSBallFanLayoutTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000161 /* KSBallFanLayoutTests.m */; };
+		A00000000000000000000242 /* SystemApplicationBridgeTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000162 /* SystemApplicationBridgeTests.m */; };
+		A00000000000000000000250 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000182 /* XCTest.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A00000000000000000000351 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000010;
+			remoteInfo = KSBall;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A00000000000000000000101 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		A00000000000000000000102 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
+		A00000000000000000000103 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
+		A00000000000000000000104 /* SceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDelegate.h; sourceTree = "<group>"; };
+		A00000000000000000000105 /* SceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SceneDelegate.m; sourceTree = "<group>"; };
+		A00000000000000000000106 /* HUDSceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HUDSceneDelegate.h; sourceTree = "<group>"; };
+		A00000000000000000000107 /* HUDSceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HUDSceneDelegate.m; sourceTree = "<group>"; };
+		A00000000000000000000108 /* KeepSceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KeepSceneDelegate.h; sourceTree = "<group>"; };
+		A00000000000000000000109 /* KeepSceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KeepSceneDelegate.m; sourceTree = "<group>"; };
+		A00000000000000000000110 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A00000000000000000000111 /* KSBall.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KSBall.entitlements; sourceTree = "<group>"; };
+		A00000000000000000000121 /* KSBallSettings.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallSettings.m; sourceTree = "<group>"; };
+		A00000000000000000000120 /* KSBallSettings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KSBallSettings.h; sourceTree = "<group>"; };
+		A00000000000000000000123 /* KSBallSettingsStore.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallSettingsStore.m; sourceTree = "<group>"; };
+		A00000000000000000000122 /* KSBallSettingsStore.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KSBallSettingsStore.h; sourceTree = "<group>"; };
+		A00000000000000000000130 /* SystemApplicationBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SystemApplicationBridge.h; sourceTree = "<group>"; };
+		A00000000000000000000131 /* SystemApplicationBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SystemApplicationBridge.m; sourceTree = "<group>"; };
+		A00000000000000000000132 /* HUDSceneCoordinator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HUDSceneCoordinator.h; sourceTree = "<group>"; };
+		A00000000000000000000133 /* HUDSceneCoordinator.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HUDSceneCoordinator.m; sourceTree = "<group>"; };
+		A00000000000000000000140 /* KSBallFanLayout.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KSBallFanLayout.h; sourceTree = "<group>"; };
+		A00000000000000000000141 /* KSBallFanLayout.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallFanLayout.m; sourceTree = "<group>"; };
+		A00000000000000000000142 /* PassthroughHUDWindow.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PassthroughHUDWindow.h; sourceTree = "<group>"; };
+		A00000000000000000000143 /* PassthroughHUDWindow.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PassthroughHUDWindow.m; sourceTree = "<group>"; };
+		A00000000000000000000144 /* FloatingHUDViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FloatingHUDViewController.h; sourceTree = "<group>"; };
+		A00000000000000000000145 /* FloatingHUDViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FloatingHUDViewController.m; sourceTree = "<group>"; };
+		A00000000000000000000146 /* ConfigurationViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ConfigurationViewController.h; sourceTree = "<group>"; };
+		A00000000000000000000147 /* ConfigurationViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ConfigurationViewController.m; sourceTree = "<group>"; };
+		A00000000000000000000148 /* AppPickerViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppPickerViewController.h; sourceTree = "<group>"; };
+		A00000000000000000000149 /* AppPickerViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppPickerViewController.m; sourceTree = "<group>"; };
+		A00000000000000000000160 /* KSBallSettingsStoreTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallSettingsStoreTests.m; sourceTree = "<group>"; };
+		A00000000000000000000161 /* KSBallFanLayoutTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallFanLayoutTests.m; sourceTree = "<group>"; };
+		A00000000000000000000162 /* SystemApplicationBridgeTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SystemApplicationBridgeTests.m; sourceTree = "<group>"; };
+		A00000000000000000000170 /* KSBall.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KSBall.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000171 /* KSBallTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KSBallTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000180 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		A00000000000000000000181 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		A00000000000000000000182 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A00000000000000000000341 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000230 /* UIKit.framework in Frameworks */,
+				A00000000000000000000231 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000344 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000250 /* XCTest.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00000000000000000000030 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000031 /* KSBall */,
+				A00000000000000000000035 /* KSBallTests */,
+				A00000000000000000000037 /* Frameworks */,
+				A00000000000000000000036 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000031 /* KSBall */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000101 /* main.m */,
+				A00000000000000000000102 /* AppDelegate.h */,
+				A00000000000000000000103 /* AppDelegate.m */,
+				A00000000000000000000104 /* SceneDelegate.h */,
+				A00000000000000000000105 /* SceneDelegate.m */,
+				A00000000000000000000106 /* HUDSceneDelegate.h */,
+				A00000000000000000000107 /* HUDSceneDelegate.m */,
+				A00000000000000000000108 /* KeepSceneDelegate.h */,
+				A00000000000000000000109 /* KeepSceneDelegate.m */,
+				A00000000000000000000032 /* Models */,
+				A00000000000000000000033 /* Services */,
+				A00000000000000000000034 /* Views */,
+				A00000000000000000000110 /* Info.plist */,
+				A00000000000000000000111 /* KSBall.entitlements */,
+			);
+			path = KSBall;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000032 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000120 /* KSBallSettings.h */,
+				A00000000000000000000121 /* KSBallSettings.m */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000033 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000122 /* KSBallSettingsStore.h */,
+				A00000000000000000000123 /* KSBallSettingsStore.m */,
+				A00000000000000000000130 /* SystemApplicationBridge.h */,
+				A00000000000000000000131 /* SystemApplicationBridge.m */,
+				A00000000000000000000132 /* HUDSceneCoordinator.h */,
+				A00000000000000000000133 /* HUDSceneCoordinator.m */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000034 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000140 /* KSBallFanLayout.h */,
+				A00000000000000000000141 /* KSBallFanLayout.m */,
+				A00000000000000000000142 /* PassthroughHUDWindow.h */,
+				A00000000000000000000143 /* PassthroughHUDWindow.m */,
+				A00000000000000000000144 /* FloatingHUDViewController.h */,
+				A00000000000000000000145 /* FloatingHUDViewController.m */,
+				A00000000000000000000146 /* ConfigurationViewController.h */,
+				A00000000000000000000147 /* ConfigurationViewController.m */,
+				A00000000000000000000148 /* AppPickerViewController.h */,
+				A00000000000000000000149 /* AppPickerViewController.m */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000035 /* KSBallTests */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000160 /* KSBallSettingsStoreTests.m */,
+				A00000000000000000000161 /* KSBallFanLayoutTests.m */,
+				A00000000000000000000162 /* SystemApplicationBridgeTests.m */,
+			);
+			path = KSBallTests;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000036 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000170 /* KSBall.app */,
+				A00000000000000000000171 /* KSBallTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000037 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000180 /* UIKit.framework */,
+				A00000000000000000000181 /* Foundation.framework */,
+				A00000000000000000000182 /* XCTest.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A00000000000000000000010 /* KSBall */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000331 /* Build configuration list for PBXNativeTarget "KSBall" */;
+			buildPhases = (
+				A00000000000000000000340 /* Sources */,
+				A00000000000000000000341 /* Frameworks */,
+				A00000000000000000000342 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KSBall;
+			productName = KSBall;
+			productReference = A00000000000000000000170 /* KSBall.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A00000000000000000000020 /* KSBallTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000332 /* Build configuration list for PBXNativeTarget "KSBallTests" */;
+			buildPhases = (
+				A00000000000000000000343 /* Sources */,
+				A00000000000000000000344 /* Frameworks */,
+				A00000000000000000000345 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A00000000000000000000352 /* PBXTargetDependency */,
+			);
+			name = KSBallTests;
+			productName = KSBallTests;
+			productReference = A00000000000000000000171 /* KSBallTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A00000000000000000000010 = { CreatedOnToolsVersion = 16.0; };
+					A00000000000000000000020 = { CreatedOnToolsVersion = 16.0; TestTargetID = A00000000000000000000010; };
+				};
+			};
+			buildConfigurationList = A00000000000000000000330 /* Build configuration list for PBXProject "KSBall" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = zh-Hans;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				zh-Hans,
+				en,
+				Base,
+			);
+			mainGroup = A00000000000000000000030;
+			productRefGroup = A00000000000000000000036 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A00000000000000000000010 /* KSBall */,
+				A00000000000000000000020 /* KSBallTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A00000000000000000000342 /* Resources */ = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+		A00000000000000000000345 /* Resources */ = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A00000000000000000000340 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000200 /* main.m in Sources */,
+				A00000000000000000000201 /* AppDelegate.m in Sources */,
+				A00000000000000000000202 /* SceneDelegate.m in Sources */,
+				A00000000000000000000203 /* HUDSceneDelegate.m in Sources */,
+				A00000000000000000000204 /* KeepSceneDelegate.m in Sources */,
+				A00000000000000000000205 /* KSBallSettings.m in Sources */,
+				A00000000000000000000206 /* KSBallSettingsStore.m in Sources */,
+				A00000000000000000000207 /* SystemApplicationBridge.m in Sources */,
+				A00000000000000000000208 /* HUDSceneCoordinator.m in Sources */,
+				A00000000000000000000209 /* KSBallFanLayout.m in Sources */,
+				A00000000000000000000210 /* PassthroughHUDWindow.m in Sources */,
+				A00000000000000000000211 /* FloatingHUDViewController.m in Sources */,
+				A00000000000000000000212 /* ConfigurationViewController.m in Sources */,
+				A00000000000000000000213 /* AppPickerViewController.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000343 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000240 /* KSBallSettingsStoreTests.m in Sources */,
+				A00000000000000000000241 /* KSBallFanLayoutTests.m in Sources */,
+				A00000000000000000000242 /* SystemApplicationBridgeTests.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A00000000000000000000352 /* PBXTargetDependency */ = { isa = PBXTargetDependency; target = A00000000000000000000010 /* KSBall */; targetProxy = A00000000000000000000351 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000300 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; SDKROOT = iphoneos; }; name = Debug; };
+		A00000000000000000000301 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; IPHONEOS_DEPLOYMENT_TARGET = 15.0; SDKROOT = iphoneos; }; name = Release; };
+		A00000000000000000000310 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; GCC_C_LANGUAGE_STANDARD = gnu17; HEADER_SEARCH_PATHS = ( "$(SRCROOT)/KSBall/Models", "$(SRCROOT)/KSBall/Services", "$(SRCROOT)/KSBall/Views", ); INFOPLIST_FILE = KSBall/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.0; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = com.kleinersource.ksball; PRODUCT_NAME = "$(TARGET_NAME)"; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		A00000000000000000000311 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; GCC_C_LANGUAGE_STANDARD = gnu17; HEADER_SEARCH_PATHS = ( "$(SRCROOT)/KSBall/Models", "$(SRCROOT)/KSBall/Services", "$(SRCROOT)/KSBall/Views", ); INFOPLIST_FILE = KSBall/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 15.0; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; PRODUCT_BUNDLE_IDENTIFIER = com.kleinersource.ksball; PRODUCT_NAME = "$(TARGET_NAME)"; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+		A00000000000000000000320 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; HEADER_SEARCH_PATHS = ( "$(SRCROOT)/KSBall/Models", "$(SRCROOT)/KSBall/Services", "$(SRCROOT)/KSBall/Views", ); IPHONEOS_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.kleinersource.ksball.tests; PRODUCT_NAME = "$(TARGET_NAME)"; TARGETED_DEVICE_FAMILY = "1,2"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/KSBall.app/KSBall"; }; name = Debug; };
+		A00000000000000000000321 /* Release */ = { isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; HEADER_SEARCH_PATHS = ( "$(SRCROOT)/KSBall/Models", "$(SRCROOT)/KSBall/Services", "$(SRCROOT)/KSBall/Views", ); IPHONEOS_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = com.kleinersource.ksball.tests; PRODUCT_NAME = "$(TARGET_NAME)"; TARGETED_DEVICE_FAMILY = "1,2"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/KSBall.app/KSBall"; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000000000000000000330 /* Build configuration list for PBXProject "KSBall" */ = { isa = XCConfigurationList; buildConfigurations = ( A00000000000000000000300 /* Debug */, A00000000000000000000301 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A00000000000000000000331 /* Build configuration list for PBXNativeTarget "KSBall" */ = { isa = XCConfigurationList; buildConfigurations = ( A00000000000000000000310 /* Debug */, A00000000000000000000311 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A00000000000000000000332 /* Build configuration list for PBXNativeTarget "KSBallTests" */ = { isa = XCConfigurationList; buildConfigurations = ( A00000000000000000000320 /* Debug */, A00000000000000000000321 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000000000000000000001 /* Project object */;
+}
