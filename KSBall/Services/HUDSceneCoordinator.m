@@ -35,7 +35,12 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
 @property (nonatomic, strong, nullable) id presentationBinder;
 @property (nonatomic) BOOL frontBoardReady;
 @property (nonatomic) BOOL hudActivationRequested;
+@property (nonatomic) BOOL ownsFrontBoardHUDScene;
 @property (nonatomic, copy) NSString *frontBoardStatusDescription;
+
+- (BOOL)attachWindowSceneToFrontBoard:(UIWindowScene *)windowScene;
+- (id)frontBoardSceneForWindowScene:(UIWindowScene *)windowScene;
+- (BOOL)createFrontBoardHUDScene;
 @end
 
 @implementation HUDSceneCoordinator
@@ -84,14 +89,12 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
     }
 
     self.hudActivationRequested = YES;
-    if ([self createFrontBoardHUDScene]) {
-        return;
-    }
-
-    self.frontBoardStatusDescription = @"FrontBoard HUD 场景创建失败，已改用 UIKit 回退场景。";
+    self.frontBoardStatusDescription = self.frontBoardReady ? @"正在请求 UIKit HUD 窗口。" : @"FrontBoard 未就绪，正在请求 UIKit HUD 窗口。";
     NSUserActivity *activity = [[NSUserActivity alloc] initWithActivityType:KSBallHUDActivityType];
     activity.title = @"KSBall HUD";
     [[UIApplication sharedApplication] requestSceneSessionActivation:nil userActivity:activity options:nil errorHandler:^(NSError * _Nonnull error) {
+        self.hudActivationRequested = NO;
+        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 窗口请求失败：%@", error.localizedDescription];
         NSLog(@"KSBall HUD scene activation failed: %@", error.localizedDescription);
     }];
 }
@@ -134,7 +137,16 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
     window.windowLevel = UIWindowLevelAlert + 2.0;
     [window makeKeyAndVisible];
     window.hidden = !self.settingsStore.settings.enabled;
-    self.frontBoardStatusDescription = window.hidden ? @"HUD 场景已连接，但当前已停用。" : @"FrontBoard HUD 已显示。";
+    if (window.hidden) {
+        self.frontBoardStatusDescription = @"HUD 场景已连接，但当前已停用。";
+        return;
+    }
+
+    if ([self attachWindowSceneToFrontBoard:window.windowScene]) {
+        self.frontBoardStatusDescription = @"FrontBoard HUD 已显示。";
+    } else if ([self createFrontBoardHUDScene]) {
+        self.frontBoardStatusDescription = @"HUD 窗口已连接，FrontBoard 回退场景已创建。";
+    }
 }
 
 - (void)disconnectHUDSession:(UISceneSession *)session {
@@ -169,6 +181,46 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
     if (!self.frontBoardReady) {
         self.frontBoardStatusDescription = @"未找到 FrontBoard 系统壳接口。请确认通过 TrollStore 安装且权限已嵌入。";
     }
+}
+
+- (BOOL)attachWindowSceneToFrontBoard:(UIWindowScene *)windowScene {
+    if (!self.frontBoardReady) {
+        return NO;
+    }
+
+    id scene = [self frontBoardSceneForWindowScene:windowScene];
+    if (!scene) {
+        self.frontBoardStatusDescription = @"HUD 窗口已连接，但无法取得其 FrontBoard 场景。";
+        return NO;
+    }
+
+    if (!self.presentationBinder) {
+        Class binderClass = NSClassFromString(@"UIRootWindowScenePresentationBinder");
+        id displayConfiguration = [self objectFromObject:UIScreen.mainScreen selector:@"displayConfiguration" argument:nil];
+        id binder = [self objectFromClass:binderClass selector:@"alloc" argument:nil];
+        binder = [self objectFromObject:binder selector:@"initWithPriority:displayConfiguration:" integerArgument:0 objectArgument:displayConfiguration];
+        if (!binder) {
+            self.frontBoardStatusDescription = @"无法创建 FrontBoard HUD 展示绑定器。";
+            return NO;
+        }
+        self.presentationBinder = binder;
+    }
+
+    [self sendObject:scene toObject:self.presentationBinder selector:@"addScene:"];
+    self.frontBoardHUDScene = scene;
+    self.ownsFrontBoardHUDScene = NO;
+    return YES;
+}
+
+- (id)frontBoardSceneForWindowScene:(UIWindowScene *)windowScene {
+    for (NSString *selectorName in @[@"_fbsScene", @"fbsScene", @"_scene"]) {
+        id scene = [self objectFromObject:windowScene selector:selectorName argument:nil];
+        NSString *className = scene ? NSStringFromClass([scene class]) : @"";
+        if ([className containsString:@"FBScene"] || [className containsString:@"FBSScene"]) {
+            return scene;
+        }
+    }
+    return nil;
 }
 
 - (BOOL)createFrontBoardHUDScene {
@@ -235,6 +287,7 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
     }
     [self sendObject:scene toObject:self.presentationBinder selector:@"addScene:"];
     self.frontBoardHUDScene = scene;
+    self.ownsFrontBoardHUDScene = YES;
     self.frontBoardStatusDescription = @"FrontBoard HUD 场景已创建，等待 HUD 窗口连接。";
     return YES;
 }
@@ -244,9 +297,12 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
         return;
     }
     [self sendObject:self.frontBoardHUDScene toObject:self.presentationBinder selector:@"removeScene:"];
-    id manager = [self objectFromClass:NSClassFromString(@"FBSceneManager") selector:@"sharedInstance" argument:nil];
-    [self sendObject:self.frontBoardHUDScene toObject:manager selector:@"destroyScene:"];
+    if (self.ownsFrontBoardHUDScene) {
+        id manager = [self objectFromClass:NSClassFromString(@"FBSceneManager") selector:@"sharedInstance" argument:nil];
+        [self sendObject:self.frontBoardHUDScene toObject:manager selector:@"destroyScene:"];
+    }
     self.frontBoardHUDScene = nil;
+    self.ownsFrontBoardHUDScene = NO;
 }
 
 - (BOOL)hasFrontBoardSceneRuntime {
