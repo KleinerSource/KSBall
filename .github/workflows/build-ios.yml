@@ -65,7 +65,7 @@ jobs:
           test -f "$entitlements_path"
           mkdir -p artifact/Payload
           echo "Signing $executable_name with ldid-procursus"
-          ldid -S"$entitlements_path" "$executable_path"
+          ldid -S"$entitlements_path" "$app_path"
           echo 'Exporting signed entitlements'
           ldid -e "$executable_path" > artifact/KSBall.entitlements.plist
           plutil -lint artifact/KSBall.entitlements.plist
