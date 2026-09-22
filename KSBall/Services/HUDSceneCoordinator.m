@@ -43,10 +43,13 @@ static BOOL KSBallPrepareFrontBoardSystemShellWithBlock(dispatch_block_t block) 
         typedef void (*FBSystemShellInitializeFunction)(dispatch_block_t);
         FBSystemShellInitializeFunction initializer = (FBSystemShellInitializeFunction)dlsym(frontBoardServices, "FBSystemShellInitialize");
         if (frontBoardServices && initializer) {
-            initializer(block ?: ^{});
+            initializer(nil);
             ready = YES;
         }
     });
+    if (ready && block) {
+        block();
+    }
     return ready;
 }
 
