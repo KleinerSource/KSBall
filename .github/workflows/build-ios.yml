@@ -54,16 +54,16 @@ jobs:
           test -d "$app_path"
           mkdir -p artifact/Payload
           cp -R "$app_path" artifact/Payload/KSBall.app
-          ditto -c -k --sequesterRsrc --keepParent artifact/Payload artifact/KSBall-unsigned.ipa
-          shasum -a 256 artifact/KSBall-unsigned.ipa | tee artifact/KSBall-unsigned.ipa.sha256
+          ditto -c -k --sequesterRsrc --keepParent artifact/Payload artifact/KSBall-unsigned.tipa
+          shasum -a 256 artifact/KSBall-unsigned.tipa | tee artifact/KSBall-unsigned.tipa.sha256
 
       - name: Upload unsigned IPA and build log
         uses: actions/upload-artifact@v7
         with:
           name: KSBall-unsigned-${{ github.sha }}
           path: |
-            artifact/KSBall-unsigned.ipa
-            artifact/KSBall-unsigned.ipa.sha256
+            artifact/KSBall-unsigned.tipa
+            artifact/KSBall-unsigned.tipa.sha256
             xcodebuild.log
           if-no-files-found: error
           retention-days: 14
@@ -89,6 +89,13 @@ jobs:
           RELEASE_TAG: testing
         run: |
           set -euo pipefail
+          find release -type f -print
+          tipa_path="$(find release -type f -name 'KSBall-unsigned.tipa' -print -quit)"
+          checksum_path="$(find release -type f -name 'KSBall-unsigned.tipa.sha256' -print -quit)"
+          build_log_path="$(find release -type f -name 'xcodebuild.log' -print -quit)"
+          test -n "$tipa_path"
+          test -n "$checksum_path"
+          test -n "$build_log_path"
           release_notes="自动测试构建
 
           提交：${GITHUB_SHA}
@@ -102,15 +109,15 @@ jobs:
               --target "$GITHUB_SHA" \
               --notes "$release_notes"
             gh release upload "$RELEASE_TAG" \
-              release/KSBall-unsigned.ipa \
-              release/KSBall-unsigned.ipa.sha256 \
-              release/xcodebuild.log \
+              "$tipa_path" \
+              "$checksum_path" \
+              "$build_log_path" \
               --clobber
           else
             gh release create "$RELEASE_TAG" \
-              release/KSBall-unsigned.ipa \
-              release/KSBall-unsigned.ipa.sha256 \
-              release/xcodebuild.log \
+              "$tipa_path" \
+              "$checksum_path" \
+              "$build_log_path" \
               --title 'KSBall 测试构建' \
               --prerelease \
               --latest=false \
