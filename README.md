@@ -19,3 +19,9 @@ KSBall 是一个仅面向 TrollStore 的 iPhone 全局悬浮快捷启动器。�
 ## 测试
 
 `KSBallTests` 覆盖设置 JSON 回退、16 项上限、排序持久化、扇形几何和桥接层 mock。私有 FrontBoard 场景与 LaunchServices 启动行为必须在 TrollStore 真机上验证。
+
+## GitHub Actions
+
+推送、拉取请求和手动触发都会运行 `.github/workflows/build-ios.yml`。工作流使用 macOS runner 构建未签名的 Release IPA，并上传 IPA、SHA-256 和 `xcodebuild.log`；最终 TrollStore 签名仍在下载工件后执行。
+
+当前处于测试阶段：每次推送到任意分支都会创建或更新固定的 `testing` 预发布，并覆盖其中的 IPA、SHA-256 和构建日志。拉取请求与手动运行仅产出 Actions 工件，不覆盖测试 Release。
