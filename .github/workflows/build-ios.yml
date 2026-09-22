@@ -69,8 +69,24 @@ jobs:
           echo 'Exporting signed entitlements'
           ldid -e "$executable_path" > artifact/KSBall.entitlements.plist
           plutil -lint artifact/KSBall.entitlements.plist
-          test "$(plutil -extract 'platform-application' raw -expect bool artifact/KSBall.entitlements.plist)" = 'true'
-          test "$(plutil -extract 'com.apple.private.security.no-sandbox' raw -expect bool artifact/KSBall.entitlements.plist)" = 'true'
+          assert_true_entitlement() {
+            local key="$1"
+            local value
+            if ! value="$(plutil -extract "$key" raw -expect bool artifact/KSBall.entitlements.plist)"; then
+              echo "::error title=Missing entitlement::$key was not exported by ldid"
+              return 1
+            fi
+            echo "$key=$value"
+            case "$value" in
+              true|1) ;;
+              *)
+                echo "::error title=Invalid entitlement::$key must be true, got $value"
+                return 1
+                ;;
+            esac
+          }
+          assert_true_entitlement 'platform-application'
+          assert_true_entitlement 'com.apple.private.security.no-sandbox'
           cp -R "$app_path" artifact/Payload/KSBall.app
           ditto -c -k --sequesterRsrc --keepParent artifact/Payload artifact/KSBall.tipa
           shasum -a 256 artifact/KSBall.tipa | tee artifact/KSBall.tipa.sha256
