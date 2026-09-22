@@ -3,7 +3,7 @@
 #import "PassthroughHUDWindow.h"
 
 @interface KeepSceneDelegate ()
-@property (nonatomic, strong) UIWindow *window;
+@property (nonatomic, strong) UIWindow *hudWindow;
 @end
 
 @implementation KeepSceneDelegate
@@ -13,13 +13,13 @@
         return;
     }
 
-    self.window = [[PassthroughHUDWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-    [HUDSceneCoordinator.sharedCoordinator connectHUDWindow:self.window session:session];
+    self.hudWindow = [[PassthroughHUDWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
+    [HUDSceneCoordinator.sharedCoordinator connectHUDWindow:self.hudWindow session:session];
 }
 
 - (void)sceneDidDisconnect:(UIScene *)scene {
     [HUDSceneCoordinator.sharedCoordinator disconnectHUDSession:scene.session];
-    self.window = nil;
+    self.hudWindow = nil;
 }
 
 @end
