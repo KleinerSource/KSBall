@@ -17,7 +17,8 @@
 }
 
 - (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options {
-    return [[UISceneConfiguration alloc] initWithName:@"Default Configuration" sessionRole:connectingSceneSession.role];
+    NSString *configurationName = KSBallIsHUDProcess() ? @"KeepScene" : @"Default Configuration";
+    return [[UISceneConfiguration alloc] initWithName:configurationName sessionRole:connectingSceneSession.role];
 }
 
 @end
