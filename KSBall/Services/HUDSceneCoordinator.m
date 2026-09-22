@@ -4,26 +4,47 @@
 #import "FloatingHUDViewController.h"
 #import "PassthroughHUDWindow.h"
 #import <dlfcn.h>
+#import <errno.h>
 #import <objc/message.h>
+#import <signal.h>
+#import <spawn.h>
+#import <string.h>
+#import <unistd.h>
 
 NSString * const KSBallHUDActivityType = @"com.kleinersource.ksball.hud";
-static NSString * const KSBallHUDSceneIdentifier = @"HUDScene";
+static NSString * const KSBallHUDSceneIdentifier = @"KeepScene";
 static NSInteger const KSBallHUDSceneLevel = 100;
+static const char * const KSBallHUDProcessArgument = "-hud";
+static NSString * const KSBallHUDProcessIdentifierDefaultsKey = @"KSBallHUDProcessIdentifier";
+static const uid_t KSBallApplicationPersonaIdentifier = 99;
+static const uint32_t KSBallApplicationPersonaFlags = 1;
+static const short KSBallApplicationSpawnFlags = 2;
 
-BOOL KSBallPrepareFrontBoardSystemShell(void) {
+extern char **environ;
+
+static BOOL KSBallPrepareFrontBoardSystemShellWithBlock(dispatch_block_t block) {
     static dispatch_once_t onceToken;
     static BOOL ready;
     dispatch_once(&onceToken, ^{
         void *frontBoardServices = dlopen("/System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices", RTLD_LAZY | RTLD_GLOBAL);
         dlopen("/System/Library/PrivateFrameworks/FrontBoardHUD.framework/FrontBoardHUD", RTLD_LAZY | RTLD_GLOBAL);
-        typedef void (*FBSystemShellInitializeFunction)(id);
+        typedef void (*FBSystemShellInitializeFunction)(dispatch_block_t);
         FBSystemShellInitializeFunction initializer = (FBSystemShellInitializeFunction)dlsym(frontBoardServices, "FBSystemShellInitialize");
         if (frontBoardServices && initializer) {
-            initializer(^{});
+            initializer(block ?: ^{});
             ready = YES;
         }
     });
     return ready;
+}
+
+BOOL KSBallPrepareFrontBoardSystemShell(void) {
+    return KSBallPrepareFrontBoardSystemShellWithBlock(nil);
+}
+
+BOOL KSBallIsHUDProcess(void) {
+    NSString *argument = [NSString stringWithUTF8String:KSBallHUDProcessArgument];
+    return [NSProcessInfo.processInfo.arguments containsObject:argument];
 }
 
 @interface HUDSceneCoordinator ()
@@ -34,13 +55,12 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
 @property (nonatomic, strong, nullable) id frontBoardHUDScene;
 @property (nonatomic, strong, nullable) id presentationBinder;
 @property (nonatomic) BOOL frontBoardReady;
-@property (nonatomic) BOOL hudActivationRequested;
 @property (nonatomic) BOOL ownsFrontBoardHUDScene;
 @property (nonatomic, copy) NSString *frontBoardStatusDescription;
 
-- (BOOL)attachWindowSceneToFrontBoard:(UIWindowScene *)windowScene;
-- (id)frontBoardSceneForWindowScene:(UIWindowScene *)windowScene;
 - (BOOL)createFrontBoardHUDScene;
+- (BOOL)spawnHUDProcess;
+- (BOOL)hasLiveHUDProcess;
 @end
 
 @implementation HUDSceneCoordinator
@@ -70,33 +90,32 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
 }
 
 - (BOOL)isHUDActive {
-    return self.hudWindow != nil && !self.hudWindow.hidden;
+    if (KSBallIsHUDProcess()) {
+        return self.hudWindow != nil && !self.hudWindow.hidden;
+    }
+    return [self hasLiveHUDProcess];
 }
 
 - (void)activateHUD {
     if (!self.settingsStore.settings.enabled) {
         return;
     }
-    [self prepareFrontBoardSystemShell];
 
-    if (self.hudWindow) {
+    if (KSBallIsHUDProcess()) {
+        if (!self.hudWindow) {
+            self.frontBoardStatusDescription = @"HUD 子进程正在等待窗口场景连接。";
+            return;
+        }
         self.hudWindow.hidden = NO;
         [(FloatingHUDViewController *)self.hudWindow.rootViewController reloadFromSettings];
         return;
     }
-    if (self.hudActivationRequested) {
+
+    if ([self hasLiveHUDProcess]) {
+        self.frontBoardStatusDescription = @"HUD 子进程已在运行。";
         return;
     }
-
-    self.hudActivationRequested = YES;
-    self.frontBoardStatusDescription = self.frontBoardReady ? @"正在请求 UIKit HUD 窗口。" : @"FrontBoard 未就绪，正在请求 UIKit HUD 窗口。";
-    NSUserActivity *activity = [[NSUserActivity alloc] initWithActivityType:KSBallHUDActivityType];
-    activity.title = @"KSBall HUD";
-    [[UIApplication sharedApplication] requestSceneSessionActivation:nil userActivity:activity options:nil errorHandler:^(NSError * _Nonnull error) {
-        self.hudActivationRequested = NO;
-        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 窗口请求失败：%@", error.localizedDescription];
-        NSLog(@"KSBall HUD scene activation failed: %@", error.localizedDescription);
-    }];
+    [self spawnHUDProcess];
 }
 
 - (void)rebuildHUD {
@@ -107,13 +126,22 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
 }
 
 - (void)deactivateHUD {
+    if (!KSBallIsHUDProcess()) {
+        pid_t processIdentifier = (pid_t)[NSUserDefaults.standardUserDefaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey];
+        if (processIdentifier > 0) {
+            kill(processIdentifier, SIGTERM);
+        }
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
+        self.frontBoardStatusDescription = @"HUD 子进程已停止。";
+        return;
+    }
+
     self.hudWindow.hidden = YES;
     self.hudWindow.rootViewController = nil;
     self.hudWindow = nil;
 
     UISceneSession *session = self.hudSession;
     self.hudSession = nil;
-    self.hudActivationRequested = NO;
     if (session) {
         [[UIApplication sharedApplication] requestSceneSessionDestruction:session options:nil errorHandler:^(NSError * _Nonnull error) {
             NSLog(@"KSBall HUD scene destruction failed: %@", error.localizedDescription);
@@ -126,7 +154,6 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
 - (void)connectHUDWindow:(UIWindow *)window session:(UISceneSession *)session {
     self.hudWindow = window;
     self.hudSession = session;
-    self.hudActivationRequested = NO;
     FloatingHUDViewController *controller = [[FloatingHUDViewController alloc] initWithSettingsStore:self.settingsStore applicationBridge:self.applicationBridge];
     __weak typeof(self) weakSelf = self;
     controller.openConfigurationHandler = ^{
@@ -141,19 +168,13 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
         self.frontBoardStatusDescription = @"HUD 场景已连接，但当前已停用。";
         return;
     }
-
-    if ([self attachWindowSceneToFrontBoard:window.windowScene]) {
-        self.frontBoardStatusDescription = @"FrontBoard HUD 已显示。";
-    } else if ([self createFrontBoardHUDScene]) {
-        self.frontBoardStatusDescription = @"HUD 窗口已连接，FrontBoard 回退场景已创建。";
-    }
+    self.frontBoardStatusDescription = @"FrontBoard HUD 已显示。";
 }
 
 - (void)disconnectHUDSession:(UISceneSession *)session {
     if ([session.persistentIdentifier isEqualToString:self.hudSession.persistentIdentifier]) {
         self.hudWindow = nil;
         self.hudSession = nil;
-        self.hudActivationRequested = NO;
     }
 }
 
@@ -183,46 +204,6 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
     }
 }
 
-- (BOOL)attachWindowSceneToFrontBoard:(UIWindowScene *)windowScene {
-    if (!self.frontBoardReady) {
-        return NO;
-    }
-
-    id scene = [self frontBoardSceneForWindowScene:windowScene];
-    if (!scene) {
-        self.frontBoardStatusDescription = @"HUD 窗口已连接，但无法取得其 FrontBoard 场景。";
-        return NO;
-    }
-
-    if (!self.presentationBinder) {
-        Class binderClass = NSClassFromString(@"UIRootWindowScenePresentationBinder");
-        id displayConfiguration = [self objectFromObject:UIScreen.mainScreen selector:@"displayConfiguration" argument:nil];
-        id binder = [self objectFromClass:binderClass selector:@"alloc" argument:nil];
-        binder = [self objectFromObject:binder selector:@"initWithPriority:displayConfiguration:" integerArgument:0 objectArgument:displayConfiguration];
-        if (!binder) {
-            self.frontBoardStatusDescription = @"无法创建 FrontBoard HUD 展示绑定器。";
-            return NO;
-        }
-        self.presentationBinder = binder;
-    }
-
-    [self sendObject:scene toObject:self.presentationBinder selector:@"addScene:"];
-    self.frontBoardHUDScene = scene;
-    self.ownsFrontBoardHUDScene = NO;
-    return YES;
-}
-
-- (id)frontBoardSceneForWindowScene:(UIWindowScene *)windowScene {
-    for (NSString *selectorName in @[@"_fbsScene", @"fbsScene", @"_scene"]) {
-        id scene = [self objectFromObject:windowScene selector:selectorName argument:nil];
-        NSString *className = scene ? NSStringFromClass([scene class]) : @"";
-        if ([className containsString:@"FBScene"] || [className containsString:@"FBSScene"]) {
-            return scene;
-        }
-    }
-    return nil;
-}
-
 - (BOOL)createFrontBoardHUDScene {
     if (self.frontBoardHUDScene) {
         self.frontBoardStatusDescription = @"FrontBoard HUD 场景已创建。";
@@ -241,15 +222,17 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
     Class managerClass = NSClassFromString(@"FBSceneManager");
     Class binderClass = NSClassFromString(@"UIRootWindowScenePresentationBinder");
 
-    id definition = [definitionClass new];
+    id definition = [self objectFromClass:definitionClass selector:@"definition" argument:nil];
     id identity = [self objectFromClass:identityClass selector:@"identityForIdentifier:" argument:KSBallHUDSceneIdentifier];
     id clientIdentity = [self objectFromClass:clientIdentityClass selector:@"localIdentity" argument:nil];
     [self sendObject:identity toObject:definition selector:@"setIdentity:"];
     [self sendObject:clientIdentity toObject:definition selector:@"setClientIdentity:"];
 
-    id specification = [self objectFromObject:definition selector:@"specification" argument:nil];
+    Class specificationClass = NSClassFromString(@"UIApplicationSceneSpecification");
+    id specification = [self objectFromClass:specificationClass selector:@"specification" argument:nil];
     id parameters = [self objectFromClass:parametersClass selector:@"parametersForSpecification:" argument:specification];
-    if (!definition || !identity || !clientIdentity || !parameters) {
+    [self sendObject:specification toObject:definition selector:@"setSpecification:"];
+    if (!definition || !identity || !clientIdentity || !specification || !parameters) {
         self.frontBoardStatusDescription = @"FrontBoard HUD 参数初始化失败。";
         return NO;
     }
@@ -285,6 +268,10 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
         self.presentationBinder = [self objectFromClass:binderClass selector:@"alloc" argument:nil];
         self.presentationBinder = [self objectFromObject:self.presentationBinder selector:@"initWithPriority:displayConfiguration:" integerArgument:0 objectArgument:displayConfiguration];
     }
+    if (!self.presentationBinder) {
+        self.frontBoardStatusDescription = @"无法创建 FrontBoard HUD 展示绑定器。";
+        return NO;
+    }
     [self sendObject:scene toObject:self.presentationBinder selector:@"addScene:"];
     self.frontBoardHUDScene = scene;
     self.ownsFrontBoardHUDScene = YES;
@@ -307,7 +294,7 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
 
 - (BOOL)hasFrontBoardSceneRuntime {
     NSArray<NSString *> *classNames = @[
-        @"FBSMutableSceneDefinition", @"FBSSceneIdentity", @"FBSSceneClientIdentity",
+        @"FBSMutableSceneDefinition", @"FBSSceneIdentity", @"FBSSceneClientIdentity", @"UIApplicationSceneSpecification",
         @"FBSMutableSceneParameters", @"UIMutableApplicationSceneSettings",
         @"UIMutableApplicationSceneClientSettings", @"FBSceneManager",
         @"UIRootWindowScenePresentationBinder"
@@ -319,6 +306,83 @@ BOOL KSBallPrepareFrontBoardSystemShell(void) {
         }
     }
     return YES;
+}
+
+- (void)bootstrapHUDProcessIfNeeded {
+    if (!KSBallIsHUDProcess()) {
+        return;
+    }
+
+    __weak typeof(self) weakSelf = self;
+    self.frontBoardStatusDescription = @"HUD 子进程正在初始化 FrontBoard。";
+    self.frontBoardReady = YES;
+    BOOL initialized = KSBallPrepareFrontBoardSystemShellWithBlock(^{
+        [weakSelf createFrontBoardHUDScene];
+    });
+    self.frontBoardReady = initialized;
+    if (!initialized) {
+        self.frontBoardStatusDescription = @"无法初始化 FrontBoard 系统壳。请确认 TrollStore 权限。";
+    }
+}
+
+- (BOOL)spawnHUDProcess {
+    NSString *executablePath = NSBundle.mainBundle.executablePath;
+    if (executablePath.length == 0) {
+        self.frontBoardStatusDescription = @"无法定位 HUD 子进程可执行文件。";
+        return NO;
+    }
+
+    const char *executable = executablePath.fileSystemRepresentation;
+    char *arguments[] = { (char *)executable, (char *)KSBallHUDProcessArgument, NULL };
+    posix_spawnattr_t attributes;
+    int result = posix_spawnattr_init(&attributes);
+    if (result != 0) {
+        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程属性初始化失败：%s", strerror(result)];
+        return NO;
+    }
+
+    result = posix_spawnattr_set_persona_np(&attributes, KSBallApplicationPersonaIdentifier, KSBallApplicationPersonaFlags);
+    if (result == 0) {
+        result = posix_spawnattr_set_persona_uid_np(&attributes, 0);
+    }
+    if (result == 0) {
+        result = posix_spawnattr_set_persona_gid_np(&attributes, 0);
+    }
+    if (result == 0) {
+        result = posix_spawnattr_setpgroup(&attributes, 0);
+    }
+    if (result == 0) {
+        result = posix_spawnattr_setflags(&attributes, KSBallApplicationSpawnFlags);
+    }
+    if (result != 0) {
+        posix_spawnattr_destroy(&attributes);
+        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程属性初始化失败：%s", strerror(result)];
+        return NO;
+    }
+
+    pid_t processIdentifier = 0;
+    result = posix_spawn(&processIdentifier, executable, NULL, &attributes, arguments, environ);
+    posix_spawnattr_destroy(&attributes);
+    if (result != 0) {
+        self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程启动失败：%s", strerror(result)];
+        return NO;
+    }
+
+    [NSUserDefaults.standardUserDefaults setInteger:processIdentifier forKey:KSBallHUDProcessIdentifierDefaultsKey];
+    self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程已启动（PID %d）。", processIdentifier];
+    return YES;
+}
+
+- (BOOL)hasLiveHUDProcess {
+    pid_t processIdentifier = (pid_t)[NSUserDefaults.standardUserDefaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey];
+    if (processIdentifier <= 0) {
+        return NO;
+    }
+    if (kill(processIdentifier, 0) == 0 || errno == EPERM) {
+        return YES;
+    }
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
+    return NO;
 }
 
 - (id)objectFromClass:(Class)class selector:(NSString *)selectorName argument:(id)argument {

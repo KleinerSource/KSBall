@@ -10,6 +10,9 @@
     if (![scene isKindOfClass:UIWindowScene.class]) {
         return;
     }
+    if (KSBallIsHUDProcess()) {
+        return;
+    }
     UIWindow *window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     ConfigurationViewController *configuration = [[ConfigurationViewController alloc] initWithSettingsStore:KSBallSettingsStore.sharedStore applicationBridge:SystemApplicationBridge.new hudSceneCoordinator:HUDSceneCoordinator.sharedCoordinator];
     window.rootViewController = [[UINavigationController alloc] initWithRootViewController:configuration];
