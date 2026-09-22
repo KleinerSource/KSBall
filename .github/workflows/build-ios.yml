@@ -45,11 +45,11 @@ jobs:
             CODE_SIGN_IDENTITY='' \
             build | tee xcodebuild.log
 
-      - name: Install ldid
+      - name: Install ldid-procursus
         run: |
           set -euo pipefail
-          brew install ldid
-          ldid -h
+          brew install ldid-procursus
+          command -v ldid
 
       - name: Package TrollStore TIPA
         env:
@@ -61,9 +61,14 @@ jobs:
           executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
           executable_path="$app_path/$executable_name"
           test -f "$executable_path"
+          entitlements_path="$GITHUB_WORKSPACE/KSBall/KSBall.entitlements"
+          test -f "$entitlements_path"
           mkdir -p artifact/Payload
-          ldid -S"$GITHUB_WORKSPACE/KSBall/KSBall.entitlements" "$executable_path"
+          echo "Signing $executable_name with ldid-procursus"
+          ldid -S"$entitlements_path" "$executable_path"
+          echo 'Exporting signed entitlements'
           ldid -e "$executable_path" > artifact/KSBall.entitlements.plist
+          plutil -lint artifact/KSBall.entitlements.plist
           test "$(plutil -extract 'platform-application' raw -expect bool artifact/KSBall.entitlements.plist)" = 'true'
           test "$(plutil -extract 'com.apple.private.security.no-sandbox' raw -expect bool artifact/KSBall.entitlements.plist)" = 'true'
           cp -R "$app_path" artifact/Payload/KSBall.app
