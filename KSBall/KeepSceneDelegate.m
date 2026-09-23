@@ -9,7 +9,7 @@
 @implementation KeepSceneDelegate
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions {
-    if (!KSBallIsHUDProcess() || ![scene isKindOfClass:UIWindowScene.class]) {
+    if (KSBallIsHUDProcess() || ![scene isKindOfClass:UIWindowScene.class]) {
         return;
     }
 

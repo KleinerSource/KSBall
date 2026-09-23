@@ -164,22 +164,34 @@ int KSBallRunHUDProcess(void) {
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    if (KSBallIsHUDProcess()) {
-        signal(SIGTERM, SIG_IGN);
-        dispatch_source_t terminationSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGTERM, 0, dispatch_get_main_queue());
-        if (terminationSource) {
-            __weak typeof(self) weakSelf = self;
-            dispatch_source_set_event_handler(terminationSource, ^{
-                [weakSelf deactivateHUD];
-                exit(EXIT_SUCCESS);
-            });
-            dispatch_resume(terminationSource);
-            self.terminationSignalSource = terminationSource;
-        } else {
-            signal(SIGTERM, SIG_DFL);
-        }
-        self.frontBoardStatusDescription = @"HUD 子进程已启动，等待窗口场景连接。";
+    if (!KSBallIsHUDProcess()) {
+        return YES;
     }
+
+    signal(SIGTERM, SIG_IGN);
+    dispatch_source_t terminationSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGTERM, 0, dispatch_get_main_queue());
+    if (terminationSource) {
+        __weak typeof(self) weakSelf = self;
+        dispatch_source_set_event_handler(terminationSource, ^{
+            [weakSelf deactivateHUD];
+            exit(EXIT_SUCCESS);
+        });
+        dispatch_resume(terminationSource);
+        self.terminationSignalSource = terminationSource;
+    } else {
+        signal(SIGTERM, SIG_DFL);
+    }
+
+    UIWindow *window = [[PassthroughHUDWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    [self configureHUDWindow:window windowLevel:10000010.0];
+    if (![self registerHUDWindowWithAccessibilityHost:window]) {
+        NSLog(@"KSBall HUD window registration failed: %@", self.frontBoardStatusDescription);
+        return NO;
+    }
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setInteger:getpid() forKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+    [defaults synchronize];
+    self.frontBoardStatusDescription = @"HUD 窗口已注册到 SpringBoard。";
     return YES;
 }
 

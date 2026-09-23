@@ -262,7 +262,7 @@ static void KSBallHandleHIDEvent(void *target, void *refcon, KSBallIOHIDServiceR
         dispatch_async(dispatch_get_main_queue(), ^{
             UIWindow *window = nil;
             for (UIWindow *candidate in UIApplication.sharedApplication.windows) {
-                if ([candidate isKindOfClass:PassthroughHUDWindow.class] && candidate.windowScene && !candidate.hidden) {
+                if ([candidate isKindOfClass:PassthroughHUDWindow.class] && !candidate.hidden) {
                     window = candidate;
                     break;
                 }
