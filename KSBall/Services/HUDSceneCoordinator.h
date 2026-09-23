@@ -7,7 +7,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 FOUNDATION_EXPORT BOOL KSBallPrepareFrontBoardSystemShell(void);
 FOUNDATION_EXPORT BOOL KSBallIsHUDProcess(void);
-FOUNDATION_EXPORT int KSBallRunHUDProcess(void);
 
 @interface HUDSceneCoordinator : NSObject
 
@@ -21,6 +20,7 @@ FOUNDATION_EXPORT int KSBallRunHUDProcess(void);
 - (void)rebuildHUD;
 - (void)deactivateHUD;
 - (void)bootstrapHUDProcessIfNeeded;
+- (void)prepareHUDProcessForLaunch;
 - (void)connectHUDWindow:(UIWindow *)window session:(UISceneSession *)session;
 - (void)disconnectHUDSession:(UISceneSession *)session;
 - (void)openConfiguration;

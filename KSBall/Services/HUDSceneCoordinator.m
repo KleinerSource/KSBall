@@ -3,7 +3,6 @@
 #import "SystemApplicationBridge.h"
 #import "HUDTouchEventBridge.h"
 #import "FloatingHUDViewController.h"
-#import "PassthroughHUDWindow.h"
 #import <dlfcn.h>
 #import <errno.h>
 #import <objc/message.h>
@@ -36,11 +35,6 @@ static int KSBallConfigureBasicSpawnAttributes(posix_spawnattr_t *attributes) {
     return posix_spawnattr_setflags(attributes, KSBallApplicationSpawnFlags);
 }
 
-static void *KSBallLookupSymbol(void *frameworkHandle, const char *symbolName) {
-    void *symbol = dlsym(RTLD_DEFAULT, symbolName);
-    return symbol ?: (frameworkHandle ? dlsym(frameworkHandle, symbolName) : NULL);
-}
-
 BOOL KSBallPrepareFrontBoardSystemShell(void) {
     static dispatch_once_t onceToken;
     static BOOL ready;
@@ -62,61 +56,10 @@ BOOL KSBallIsHUDProcess(void) {
     return [NSProcessInfo.processInfo.arguments containsObject:argument];
 }
 
-@interface KSBallHUDApplication : UIApplication
-@end
-
-@implementation KSBallHUDApplication
-@end
-
-int KSBallRunHUDProcess(void) {
-    void *graphicsServices = dlopen("/System/Library/PrivateFrameworks/GraphicsServices.framework/GraphicsServices", RTLD_LAZY | RTLD_GLOBAL);
-    void *backBoardServices = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_LAZY | RTLD_GLOBAL);
-    void *springBoardServices = dlopen("/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices", RTLD_LAZY | RTLD_GLOBAL);
-
-    typedef void (*KSBallInitializeFunction)(void);
-    typedef void (*KSBallInstantiateApplicationFunction)(id);
-    KSBallInitializeFunction initializeGraphics = (KSBallInitializeFunction)KSBallLookupSymbol(graphicsServices, "GSInitialize");
-    KSBallInitializeFunction startDisplayServices = (KSBallInitializeFunction)KSBallLookupSymbol(backBoardServices, "BKSDisplayServicesStart");
-    KSBallInitializeFunction initializeApplication = (KSBallInitializeFunction)KSBallLookupSymbol(backBoardServices, "UIApplicationInitialize");
-    KSBallInstantiateApplicationFunction instantiateApplication = (KSBallInstantiateApplicationFunction)KSBallLookupSymbol(backBoardServices, "UIApplicationInstantiateSingleton");
-    if (!graphicsServices || !backBoardServices || !springBoardServices || !initializeGraphics || !startDisplayServices || !initializeApplication || !instantiateApplication) {
-        NSLog(@"KSBall HUD plugin initialization symbols are unavailable.");
-        return EXIT_FAILURE;
-    }
-
-    initializeGraphics();
-    startDisplayServices();
-    initializeApplication();
-    instantiateApplication(KSBallHUDApplication.class);
-
-    HUDSceneCoordinator *coordinator = HUDSceneCoordinator.sharedCoordinator;
-    UIApplication *application = UIApplication.sharedApplication;
-    application.delegate = (id<UIApplicationDelegate>)coordinator;
-    SEL accessibilityInitSelector = NSSelectorFromString(@"_accessibilityInit");
-    if ([application respondsToSelector:accessibilityInitSelector]) {
-        ((void (*)(id, SEL))objc_msgSend)(application, accessibilityInitSelector);
-    }
-    [NSRunLoop currentRunLoop];
-    if (!KSBallRegisterHUDEventCallback()) {
-        NSLog(@"KSBall HUD touch event callback registration failed.");
-        return EXIT_FAILURE;
-    }
-
-    SEL completeAsPluginSelector = NSSelectorFromString(@"__completeAndRunAsPlugin");
-    if (![application respondsToSelector:completeAsPluginSelector]) {
-        NSLog(@"KSBall HUD plugin entry point is unavailable.");
-        return EXIT_FAILURE;
-    }
-    ((void (*)(id, SEL))objc_msgSend)(application, completeAsPluginSelector);
-    CFRunLoopRun();
-    return EXIT_SUCCESS;
-}
-
-@interface HUDSceneCoordinator () <UIApplicationDelegate>
+@interface HUDSceneCoordinator ()
 @property (nonatomic, strong) KSBallSettingsStore *settingsStore;
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
 @property (nonatomic, strong, nullable) UIWindow *hudWindow;
-@property (nonatomic, strong, nullable) UIWindow *hudBootstrapWindow;
 @property (nonatomic, strong, nullable) UISceneSession *hudSession;
 @property (nonatomic, strong, nullable) id frontBoardHUDScene;
 @property (nonatomic, strong, nullable) id presentationBinder;
@@ -176,9 +119,9 @@ int KSBallRunHUDProcess(void) {
     }
 }
 
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+- (void)prepareHUDProcessForLaunch {
     if (!KSBallIsHUDProcess()) {
-        return YES;
+        return;
     }
 
     signal(SIGTERM, SIG_IGN);
@@ -195,20 +138,12 @@ int KSBallRunHUDProcess(void) {
         signal(SIGTERM, SIG_DFL);
     }
 
-    UIWindow *window = [[PassthroughHUDWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    [self configureHUDWindow:window windowLevel:10000010.0];
-    if (![self registerHUDWindowWithAccessibilityHost:window]) {
-        NSLog(@"KSBall HUD window registration failed: %@", self.frontBoardStatusDescription);
-        return NO;
+    if (!KSBallRegisterHUDEventCallback()) {
+        self.frontBoardStatusDescription = @"HUD 场景已启动，但触摸事件回调注册失败。";
+        NSLog(@"KSBall HUD touch event callback registration failed.");
+    } else {
+        self.frontBoardStatusDescription = @"HUD 已进入 UIKit 生命周期，等待 KeepScene 连接。";
     }
-    self.hudBootstrapWindow = window;
-    self.frontBoardStatusDescription = @"启动窗口已注册到 SpringBoard，等待 HUD 场景连接。";
-    return YES;
-}
-
-- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options {
-    NSString *configurationName = KSBallIsHUDProcess() ? @"KeepScene" : @"Default Configuration";
-    return [[UISceneConfiguration alloc] initWithName:configurationName sessionRole:connectingSceneSession.role];
 }
 
 - (BOOL)isHUDActive {
@@ -288,15 +223,9 @@ int KSBallRunHUDProcess(void) {
 
     [self unregisterHUDWindowFromAccessibilityHost];
     UIWindow *sceneWindow = self.hudWindow;
-    UIWindow *bootstrapWindow = self.hudBootstrapWindow;
     sceneWindow.hidden = YES;
     sceneWindow.rootViewController = nil;
-    if (bootstrapWindow != sceneWindow) {
-        bootstrapWindow.hidden = YES;
-        bootstrapWindow.rootViewController = nil;
-    }
     self.hudWindow = nil;
-    self.hudBootstrapWindow = nil;
 
     UISceneSession *session = self.hudSession;
     self.hudSession = nil;
@@ -395,6 +324,12 @@ int KSBallRunHUDProcess(void) {
         self.frontBoardStatusDescription = @"HUD 场景已连接，但当前已停用。";
         return;
     }
+    if (KSBallIsHUDProcess() && ![self registerHUDWindowWithAccessibilityHost:window]) {
+        window.hidden = YES;
+        self.frontBoardStatusDescription = [NSString stringWithFormat:@"KeepScene 已连接，但 SpringBoard 窗口注册失败：%@", self.frontBoardStatusDescription];
+        NSLog(@"KSBall HUD window registration failed: %@", self.frontBoardStatusDescription);
+        return;
+    }
     if (frontBoardSceneReady) {
         self.frontBoardStatusDescription = @"FrontBoard HUD 已显示。";
     } else {
@@ -461,15 +396,9 @@ int KSBallRunHUDProcess(void) {
     if ([session.persistentIdentifier isEqualToString:self.hudSession.persistentIdentifier]) {
         [self unregisterHUDWindowFromAccessibilityHost];
         UIWindow *sceneWindow = self.hudWindow;
-        UIWindow *bootstrapWindow = self.hudBootstrapWindow;
         sceneWindow.hidden = YES;
         sceneWindow.rootViewController = nil;
-        if (bootstrapWindow != sceneWindow) {
-            bootstrapWindow.hidden = YES;
-            bootstrapWindow.rootViewController = nil;
-        }
         self.hudWindow = nil;
-        self.hudBootstrapWindow = nil;
         self.hudSession = nil;
         [self destroyFrontBoardHUDScene];
         NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;

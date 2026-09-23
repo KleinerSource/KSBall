@@ -12,7 +12,10 @@
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    [HUDSceneCoordinator sharedCoordinator];
+    HUDSceneCoordinator *coordinator = HUDSceneCoordinator.sharedCoordinator;
+    if (KSBallIsHUDProcess()) {
+        [coordinator prepareHUDProcessForLaunch];
+    }
     return YES;
 }
 
