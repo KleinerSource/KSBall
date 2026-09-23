@@ -119,6 +119,11 @@ int KSBallRunHUDProcess(void) {
 @property (nonatomic, strong, nullable) id frontBoardHUDScene;
 @property (nonatomic, strong, nullable) id presentationBinder;
 @property (nonatomic, strong, nullable) id accessibilityWindowHostingController;
+@property (nonatomic, strong, nullable) dispatch_source_t terminationSignalSource;
+@property (nonatomic, copy, nullable) dispatch_block_t hudProcessStopCompletion;
+@property (nonatomic) unsigned int accessibilityWindowContextIdentifier;
+@property (nonatomic) BOOL accessibilityWindowRegistered;
+@property (nonatomic) BOOL hudProcessStopping;
 @property (nonatomic) BOOL frontBoardReady;
 @property (nonatomic) BOOL ownsFrontBoardHUDScene;
 @property (nonatomic, copy) NSString *frontBoardStatusDescription;
@@ -126,6 +131,8 @@ int KSBallRunHUDProcess(void) {
 - (BOOL)createFrontBoardHUDSceneForWindowScene:(UIWindowScene *)windowScene;
 - (void)configureHUDWindow:(UIWindow *)window windowLevel:(CGFloat)windowLevel;
 - (BOOL)registerHUDWindowWithAccessibilityHost:(UIWindow *)window;
+- (void)unregisterHUDWindowFromAccessibilityHost;
+- (void)stopHUDProcessWithCompletion:(nullable dispatch_block_t)completion;
 - (BOOL)spawnHUDProcess;
 - (BOOL)hasLiveHUDProcess;
 @end
@@ -157,16 +164,22 @@ int KSBallRunHUDProcess(void) {
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    UIWindow *window = [[PassthroughHUDWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    [self configureHUDWindow:window windowLevel:10000010.0];
-    if (![self registerHUDWindowWithAccessibilityHost:window]) {
-        NSLog(@"KSBall HUD window registration failed: %@", self.frontBoardStatusDescription);
-        return NO;
+    if (KSBallIsHUDProcess()) {
+        signal(SIGTERM, SIG_IGN);
+        dispatch_source_t terminationSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGTERM, 0, dispatch_get_main_queue());
+        if (terminationSource) {
+            __weak typeof(self) weakSelf = self;
+            dispatch_source_set_event_handler(terminationSource, ^{
+                [weakSelf deactivateHUD];
+                exit(EXIT_SUCCESS);
+            });
+            dispatch_resume(terminationSource);
+            self.terminationSignalSource = terminationSource;
+        } else {
+            signal(SIGTERM, SIG_DFL);
+        }
+        self.frontBoardStatusDescription = @"HUD 子进程已启动，等待窗口场景连接。";
     }
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults setInteger:getpid() forKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-    [defaults synchronize];
-    self.frontBoardStatusDescription = @"HUD 窗口已注册到 SpringBoard。";
     return YES;
 }
 
@@ -203,6 +216,16 @@ int KSBallRunHUDProcess(void) {
         return;
     }
 
+    if (self.hudProcessStopping) {
+        __weak typeof(self) weakSelf = self;
+        self.hudProcessStopCompletion = ^{
+            if (weakSelf.settingsStore.settings.enabled) {
+                [weakSelf activateHUD];
+            }
+        };
+        return;
+    }
+
     if ([self hasLiveHUDProcess]) {
         self.frontBoardStatusDescription = @"HUD 子进程已在运行。";
         return;
@@ -211,25 +234,26 @@ int KSBallRunHUDProcess(void) {
 }
 
 - (void)rebuildHUD {
-    [self deactivateHUD];
-    if (self.settingsStore.settings.enabled) {
+    if (KSBallIsHUDProcess()) {
         [self activateHUD];
+        return;
     }
+
+    __weak typeof(self) weakSelf = self;
+    [self stopHUDProcessWithCompletion:^{
+        if (weakSelf.settingsStore.settings.enabled) {
+            [weakSelf activateHUD];
+        }
+    }];
 }
 
 - (void)deactivateHUD {
     if (!KSBallIsHUDProcess()) {
-        pid_t processIdentifier = (pid_t)[NSUserDefaults.standardUserDefaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey];
-        if (processIdentifier > 0) {
-            kill(processIdentifier, SIGTERM);
-        }
-        [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
-        [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-        [NSUserDefaults.standardUserDefaults synchronize];
-        self.frontBoardStatusDescription = @"HUD 子进程已停止。";
+        [self stopHUDProcessWithCompletion:nil];
         return;
     }
 
+    [self unregisterHUDWindowFromAccessibilityHost];
     self.hudWindow.hidden = YES;
     self.hudWindow.rootViewController = nil;
     self.hudWindow = nil;
@@ -245,6 +269,69 @@ int KSBallRunHUDProcess(void) {
     [self destroyFrontBoardHUDScene];
 }
 
+- (void)stopHUDProcessWithCompletion:(nullable dispatch_block_t)completion {
+    if (self.hudProcessStopping) {
+        self.hudProcessStopCompletion = completion;
+        return;
+    }
+
+    pid_t processIdentifier = (pid_t)[NSUserDefaults.standardUserDefaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey];
+    if (processIdentifier <= 0 || ![self hasLiveHUDProcess]) {
+        self.frontBoardStatusDescription = @"HUD 子进程已停止。";
+        if (completion) {
+            completion();
+        }
+        return;
+    }
+
+    self.hudProcessStopping = YES;
+    self.hudProcessStopCompletion = completion;
+    kill(processIdentifier, SIGTERM);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        int processStatus = 0;
+        BOOL stopped = NO;
+        for (NSUInteger attempt = 0; attempt < 75; attempt++) {
+            if (waitpid(processIdentifier, &processStatus, WNOHANG) == processIdentifier) {
+                stopped = YES;
+                break;
+            }
+            if (kill(processIdentifier, 0) != 0 && errno == ESRCH) {
+                stopped = YES;
+                break;
+            }
+            usleep(20000);
+        }
+
+        if (!stopped) {
+            kill(processIdentifier, SIGKILL);
+            for (NSUInteger attempt = 0; attempt < 50; attempt++) {
+                if (waitpid(processIdentifier, &processStatus, WNOHANG) == processIdentifier ||
+                    (kill(processIdentifier, 0) != 0 && errno == ESRCH)) {
+                    stopped = YES;
+                    break;
+                }
+                usleep(20000);
+            }
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+            if (stopped && [defaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey] == processIdentifier) {
+                [defaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
+                [defaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+                [defaults synchronize];
+            }
+            self.hudProcessStopping = NO;
+            dispatch_block_t stopCompletion = self.hudProcessStopCompletion;
+            self.hudProcessStopCompletion = nil;
+            self.frontBoardStatusDescription = stopped ? @"HUD 子进程已停止。" : @"HUD 子进程未能退出，已阻止重复启动。";
+            if (stopped && stopCompletion) {
+                stopCompletion();
+            }
+        });
+    });
+}
+
 - (void)connectHUDWindow:(UIWindow *)window session:(UISceneSession *)session {
     self.hudWindow = window;
     self.hudSession = session;
@@ -253,7 +340,17 @@ int KSBallRunHUDProcess(void) {
         self.frontBoardReady = KSBallPrepareFrontBoardSystemShell();
         frontBoardSceneReady = self.frontBoardReady && [self createFrontBoardHUDSceneForWindowScene:window.windowScene];
     }
-    [self configureHUDWindow:window windowLevel:UIWindowLevelAlert + 2.0];
+    [self configureHUDWindow:window windowLevel:10000010.0];
+    if (KSBallIsHUDProcess()) {
+        if (![self registerHUDWindowWithAccessibilityHost:window]) {
+            window.hidden = YES;
+            NSLog(@"KSBall HUD window registration failed: %@", self.frontBoardStatusDescription);
+            return;
+        }
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        [defaults setInteger:getpid() forKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+        [defaults synchronize];
+    }
     if (window.hidden) {
         self.frontBoardStatusDescription = @"HUD 场景已连接，但当前已停用。";
         return;
@@ -286,6 +383,7 @@ int KSBallRunHUDProcess(void) {
         return NO;
     }
 
+    [self unregisterHUDWindowFromAccessibilityHost];
     id hostingController = [hostingControllerClass new];
     if (![hostingController respondsToSelector:registerWindowSelector]) {
         self.frontBoardStatusDescription = @"SpringBoard accessibility window host 缺少注册接口。";
@@ -295,11 +393,25 @@ int KSBallRunHUDProcess(void) {
     unsigned int contextIdentifier = ((unsigned int (*)(id, SEL))objc_msgSend)(window, contextIdentifierSelector);
     ((void (*)(id, SEL, unsigned int, double))objc_msgSend)(hostingController, registerWindowSelector, contextIdentifier, (double)window.windowLevel);
     self.accessibilityWindowHostingController = hostingController;
+    self.accessibilityWindowContextIdentifier = contextIdentifier;
+    self.accessibilityWindowRegistered = YES;
     return YES;
+}
+
+- (void)unregisterHUDWindowFromAccessibilityHost {
+    id hostingController = self.accessibilityWindowHostingController;
+    SEL unregisterWindowSelector = NSSelectorFromString(@"unregisterWindowWithContextID:");
+    if (self.accessibilityWindowRegistered && [hostingController respondsToSelector:unregisterWindowSelector]) {
+        ((void (*)(id, SEL, unsigned int))objc_msgSend)(hostingController, unregisterWindowSelector, self.accessibilityWindowContextIdentifier);
+    }
+    self.accessibilityWindowHostingController = nil;
+    self.accessibilityWindowContextIdentifier = 0;
+    self.accessibilityWindowRegistered = NO;
 }
 
 - (void)disconnectHUDSession:(UISceneSession *)session {
     if ([session.persistentIdentifier isEqualToString:self.hudSession.persistentIdentifier]) {
+        [self unregisterHUDWindowFromAccessibilityHost];
         self.hudWindow = nil;
         self.hudSession = nil;
     }

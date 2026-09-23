@@ -6,6 +6,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <sys/utsname.h>
+#import "PassthroughHUDWindow.h"
 
 typedef struct __IOHIDEvent *KSBallIOHIDEventRef;
 typedef struct __IOHIDService *KSBallIOHIDServiceRef;
@@ -259,7 +260,13 @@ static void KSBallHandleHIDEvent(void *target, void *refcon, KSBallIOHIDServiceR
 
         identifier = MIN(MAX(identifier, 1), 98);
         dispatch_async(dispatch_get_main_queue(), ^{
-            UIWindow *window = UIApplication.sharedApplication.windows.firstObject;
+            UIWindow *window = nil;
+            for (UIWindow *candidate in UIApplication.sharedApplication.windows) {
+                if ([candidate isKindOfClass:PassthroughHUDWindow.class] && candidate.windowScene && !candidate.hidden) {
+                    window = candidate;
+                    break;
+                }
+            }
             if (!window) {
                 return;
             }

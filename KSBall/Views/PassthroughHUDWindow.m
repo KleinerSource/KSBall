@@ -10,6 +10,10 @@
     return NO;
 }
 
+- (BOOL)_ignoresHitTest {
+    return NO;
+}
+
 - (BOOL)_isSecure {
     return YES;
 }

@@ -36,6 +36,7 @@
 @property (nonatomic) BOOL panOpenedMenu;
 @property (nonatomic) CFTimeInterval touchStartTime;
 @property (nonatomic) CGPoint touchStartLocation;
+@property (nonatomic) CGPoint touchStartButtonCenter;
 @end
 
 @implementation FloatingHUDViewController
@@ -257,6 +258,7 @@
     UITouch *touch = event.allTouches.anyObject;
     self.touchStartTime = NSProcessInfo.processInfo.systemUptime;
     self.touchStartLocation = touch ? [touch locationInView:self.view] : self.floatingButton.center;
+    self.touchStartButtonCenter = self.floatingButton.center;
     self.panOpenedMenu = NO;
     self.longPressMoved = NO;
 }
@@ -290,6 +292,7 @@
         if (self.touchStartTime <= 0.0) {
             self.touchStartTime = NSProcessInfo.processInfo.systemUptime;
             self.touchStartLocation = location;
+            self.touchStartButtonCenter = self.floatingButton.center;
         }
         return;
     }
@@ -298,13 +301,17 @@
         CGFloat dx = location.x - self.touchStartLocation.x;
         CGFloat dy = location.y - self.touchStartLocation.y;
         CGFloat distance = hypot(dx, dy);
-        BOOL shouldDrag = self.longPressActive;
+        BOOL heldLongEnough = NSProcessInfo.processInfo.systemUptime - self.touchStartTime >= 0.55;
+        BOOL shouldDrag = self.longPressActive || heldLongEnough;
         if (shouldDrag) {
             self.ignoreNextTap = YES;
             self.longPressMoved = YES;
             self.isDragging = YES;
             [self dismissMenuAnimated:NO];
-            self.floatingButton.center = CGPointMake(location.x, MIN(MAX(location.y, minY), maxY));
+            CGFloat minX = CGRectGetMinX(safeBounds) + 28.0;
+            CGFloat maxX = CGRectGetMaxX(safeBounds) - 28.0;
+            self.floatingButton.center = CGPointMake(MIN(MAX(self.touchStartButtonCenter.x + dx, minX), maxX),
+                                                     MIN(MAX(self.touchStartButtonCenter.y + dy, minY), maxY));
         } else if (distance >= 18.0 && !self.panOpenedMenu) {
             self.ignoreNextTap = YES;
             self.panOpenedMenu = YES;
@@ -315,7 +322,7 @@
         return;
     }
 
-    if (recognizer.state == UIGestureRecognizerStateEnded || recognizer.state == UIGestureRecognizerStateCancelled) {
+    if (recognizer.state == UIGestureRecognizerStateEnded || recognizer.state == UIGestureRecognizerStateCancelled || recognizer.state == UIGestureRecognizerStateFailed) {
         if (self.isDragging) {
             KSBallEdge edge = self.floatingButton.center.x < CGRectGetMidX(self.view.bounds) ? KSBallEdgeLeft : KSBallEdgeRight;
             CGFloat normalizedPosition = maxY > minY ? (self.floatingButton.center.y - minY) / (maxY - minY) : 0.5;
