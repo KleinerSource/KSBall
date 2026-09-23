@@ -4,6 +4,10 @@
 <dict>
     <key>platform-application</key>
     <true/>
+    <key>com.apple.QuartzCore.displayable-context</key>
+    <true/>
+    <key>com.apple.QuartzCore.secure-mode</key>
+    <true/>
     <key>com.apple.backboard.client</key>
     <true/>
     <key>com.apple.frontboard.launchapplications</key>

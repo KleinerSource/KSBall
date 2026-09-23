@@ -86,6 +86,8 @@ jobs:
             esac
           }
           assert_true_entitlement 'platform-application'
+          assert_true_entitlement 'com.apple.QuartzCore.displayable-context'
+          assert_true_entitlement 'com.apple.QuartzCore.secure-mode'
           assert_true_entitlement 'com.apple.private.persona-mgmt'
           assert_true_entitlement 'com.apple.private.security.no-sandbox'
           cp -R "$app_path" artifact/Payload/KSBall.app
