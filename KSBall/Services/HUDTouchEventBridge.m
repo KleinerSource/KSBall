@@ -31,7 +31,7 @@ typedef void *(*KSBallRegisterHIDEventCallbackFunction)(KSBallHIDEventCallback);
 - (void)_clearTouches;
 @end
 
-@interface UITouch (KSBallHUDTouchPrivate)
+@interface UITouch (KSBallHUDPrivateAPIs)
 - (void)setWindow:(UIWindow *)window;
 - (void)_setLocationInWindow:(CGPoint)location resetPrevious:(BOOL)resetPrevious;
 - (void)setView:(UIView *)view;
@@ -40,14 +40,17 @@ typedef void *(*KSBallRegisterHIDEventCallbackFunction)(KSBallHIDEventCallback);
 - (void)_setIsTapToClick:(BOOL)value;
 - (void)setGestureView:(UIView *)view;
 - (void)_setHidEvent:(KSBallIOHIDEventRef)event;
-- (void)setLocationInWindow:(CGPoint)location;
-- (void)setPhaseAndUpdateTimestamp:(UITouchPhase)phase;
-- (instancetype)ksball_initAtPoint:(CGPoint)point inWindow:(UIWindow *)window onView:(UIView *)view;
 @end
 
-@implementation UITouch (KSBallHUDTouchPrivate)
+@interface UITouch (KSBallTouchEventBridge)
+- (instancetype)initKSBallAtPoint:(CGPoint)point inWindow:(UIWindow *)window onView:(UIView *)view;
+- (void)setLocationInWindow:(CGPoint)location;
+- (void)setPhaseAndUpdateTimestamp:(UITouchPhase)phase;
+@end
 
-- (instancetype)ksball_initAtPoint:(CGPoint)point inWindow:(UIWindow *)window onView:(UIView *)view {
+@implementation UITouch (KSBallTouchEventBridge)
+
+- (instancetype)initKSBallAtPoint:(CGPoint)point inWindow:(UIWindow *)window onView:(UIView *)view {
     self = [super init];
     if (!self) {
         return nil;
@@ -165,7 +168,7 @@ static void KSBallReceiveTouch(NSInteger identifier, CGPoint location, UITouchPh
         if (phase == UITouchPhaseEnded || phase == UITouchPhaseCancelled || !view) {
             return;
         }
-        touch = [[UITouch alloc] ksball_initAtPoint:location inWindow:window onView:view];
+        touch = [[UITouch alloc] initKSBallAtPoint:location inWindow:window onView:view];
         if (!touch) {
             return;
         }
