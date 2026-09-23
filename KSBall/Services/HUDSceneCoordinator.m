@@ -17,6 +17,7 @@
 static const char * const KSBallHUDProcessArgument = "-hud";
 static NSString * const KSBallHUDProcessIdentifierDefaultsKey = @"KSBallHUDProcessIdentifier";
 static NSString * const KSBallHUDReadyProcessIdentifierDefaultsKey = @"KSBallHUDReadyProcessIdentifier";
+static NSString * const KSBallHUDStatusDescriptionDefaultsKey = @"KSBallHUDStatusDescription";
 static const uid_t KSBallApplicationPersonaIdentifier = 99;
 static const uint32_t KSBallApplicationPersonaFlags = 1;
 static const short KSBallApplicationSpawnFlags = 2;
@@ -140,6 +141,8 @@ int KSBallRunHUDProcess(void) {
 
 @implementation HUDSceneCoordinator
 
+@synthesize frontBoardStatusDescription = _frontBoardStatusDescription;
+
 + (instancetype)sharedCoordinator {
     static HUDSceneCoordinator *coordinator;
     static dispatch_once_t onceToken;
@@ -162,6 +165,15 @@ int KSBallRunHUDProcess(void) {
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)setFrontBoardStatusDescription:(NSString *)frontBoardStatusDescription {
+    _frontBoardStatusDescription = [frontBoardStatusDescription copy];
+    if (KSBallIsHUDProcess() && _frontBoardStatusDescription.length > 0) {
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        [defaults setObject:_frontBoardStatusDescription forKey:KSBallHUDStatusDescriptionDefaultsKey];
+        [defaults synchronize];
+    }
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
@@ -190,11 +202,13 @@ int KSBallRunHUDProcess(void) {
         return NO;
     }
     self.hudBootstrapWindow = window;
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults setInteger:getpid() forKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-    [defaults synchronize];
-    self.frontBoardStatusDescription = @"HUD 窗口已注册到 SpringBoard。";
+    self.frontBoardStatusDescription = @"启动窗口已注册到 SpringBoard，等待 HUD 场景连接。";
     return YES;
+}
+
+- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options {
+    NSString *configurationName = KSBallIsHUDProcess() ? @"KeepScene" : @"Default Configuration";
+    return [[UISceneConfiguration alloc] initWithName:configurationName sessionRole:connectingSceneSession.role];
 }
 
 - (BOOL)isHUDActive {
@@ -202,12 +216,17 @@ int KSBallRunHUDProcess(void) {
         return self.hudWindow != nil && !self.hudWindow.hidden && self.accessibilityWindowHostingController != nil;
     }
     if (![self hasLiveHUDProcess]) {
+        NSString *childStatus = [NSUserDefaults.standardUserDefaults stringForKey:KSBallHUDStatusDescriptionDefaultsKey];
+        self.frontBoardStatusDescription = childStatus.length > 0 ? [NSString stringWithFormat:@"HUD 子进程已退出；最后阶段：%@", childStatus] : @"HUD 子进程未运行。";
         return NO;
     }
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     pid_t processIdentifier = (pid_t)[defaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey];
     BOOL ready = [defaults integerForKey:KSBallHUDReadyProcessIdentifierDefaultsKey] == processIdentifier;
-    if (ready) {
+    NSString *childStatus = [defaults stringForKey:KSBallHUDStatusDescriptionDefaultsKey];
+    if (childStatus.length > 0) {
+        self.frontBoardStatusDescription = childStatus;
+    } else if (ready) {
         self.frontBoardStatusDescription = @"HUD 窗口已注册到 SpringBoard。";
     } else {
         self.frontBoardStatusDescription = @"HUD 子进程已启动，正在注册 SpringBoard 窗口。";
@@ -288,6 +307,10 @@ int KSBallRunHUDProcess(void) {
     }
 
     [self destroyFrontBoardHUDScene];
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+    [defaults synchronize];
+    self.frontBoardStatusDescription = @"HUD 窗口已注销，子进程正在退出。";
 }
 
 - (void)stopHUDProcessWithCompletion:(nullable dispatch_block_t)completion {
@@ -340,6 +363,7 @@ int KSBallRunHUDProcess(void) {
             if (stopped && [defaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey] == processIdentifier) {
                 [defaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
                 [defaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+                [defaults removeObjectForKey:KSBallHUDStatusDescriptionDefaultsKey];
                 [defaults synchronize];
             }
             self.hudProcessStopping = NO;
@@ -359,7 +383,12 @@ int KSBallRunHUDProcess(void) {
     BOOL frontBoardSceneReady = YES;
     if (KSBallIsHUDProcess()) {
         self.frontBoardReady = KSBallPrepareFrontBoardSystemShell();
-        frontBoardSceneReady = self.frontBoardReady && [self createFrontBoardHUDSceneForWindowScene:window.windowScene];
+        if (self.frontBoardReady) {
+            frontBoardSceneReady = [self createFrontBoardHUDSceneForWindowScene:window.windowScene];
+        } else {
+            self.frontBoardStatusDescription = @"无法初始化 FrontBoard 系统壳；检查 TrollStore 权限。";
+            frontBoardSceneReady = NO;
+        }
     }
     [self configureHUDWindow:window windowLevel:UIWindowLevelAlert + 2.0];
     if (window.hidden) {
@@ -368,6 +397,14 @@ int KSBallRunHUDProcess(void) {
     }
     if (frontBoardSceneReady) {
         self.frontBoardStatusDescription = @"FrontBoard HUD 已显示。";
+    } else {
+        NSString *failure = self.frontBoardStatusDescription;
+        self.frontBoardStatusDescription = [NSString stringWithFormat:@"KeepScene 已连接，但 FrontBoard HUD 场景创建失败：%@", failure];
+    }
+    if (KSBallIsHUDProcess() && self.accessibilityWindowRegistered) {
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        [defaults setInteger:getpid() forKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+        [defaults synchronize];
     }
 }
 
@@ -435,6 +472,10 @@ int KSBallRunHUDProcess(void) {
         self.hudBootstrapWindow = nil;
         self.hudSession = nil;
         [self destroyFrontBoardHUDScene];
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        [defaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+        [defaults synchronize];
+        self.frontBoardStatusDescription = @"HUD 场景已断开，窗口已清理。";
     }
 }
 
@@ -588,8 +629,10 @@ int KSBallRunHUDProcess(void) {
 
     const char *executable = executablePath.fileSystemRepresentation;
     char *arguments[] = { (char *)executable, (char *)KSBallHUDProcessArgument, NULL };
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-    [NSUserDefaults.standardUserDefaults synchronize];
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+    [defaults removeObjectForKey:KSBallHUDStatusDescriptionDefaultsKey];
+    [defaults synchronize];
     posix_spawnattr_t attributes;
     int result = posix_spawnattr_init(&attributes);
     if (result != 0) {
