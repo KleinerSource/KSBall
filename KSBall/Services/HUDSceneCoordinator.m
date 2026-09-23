@@ -12,8 +12,6 @@
 #import <unistd.h>
 
 NSString * const KSBallHUDActivityType = @"com.kleinersource.ksball.hud";
-static NSString * const KSBallHUDSceneIdentifier = @"KeepScene";
-static NSInteger const KSBallHUDSceneLevel = 100;
 static const char * const KSBallHUDProcessArgument = "-hud";
 static NSString * const KSBallHUDProcessIdentifierDefaultsKey = @"KSBallHUDProcessIdentifier";
 static const uid_t KSBallApplicationPersonaIdentifier = 99;
@@ -34,7 +32,7 @@ static int KSBallConfigureBasicSpawnAttributes(posix_spawnattr_t *attributes) {
     return posix_spawnattr_setflags(attributes, KSBallApplicationSpawnFlags);
 }
 
-static BOOL KSBallPrepareFrontBoardSystemShellWithBlock(dispatch_block_t block) {
+BOOL KSBallPrepareFrontBoardSystemShell(void) {
     static dispatch_once_t onceToken;
     static BOOL ready;
     dispatch_once(&onceToken, ^{
@@ -47,14 +45,7 @@ static BOOL KSBallPrepareFrontBoardSystemShellWithBlock(dispatch_block_t block) 
             ready = YES;
         }
     });
-    if (ready && block) {
-        block();
-    }
     return ready;
-}
-
-BOOL KSBallPrepareFrontBoardSystemShell(void) {
-    return KSBallPrepareFrontBoardSystemShellWithBlock(nil);
 }
 
 BOOL KSBallIsHUDProcess(void) {
@@ -73,7 +64,7 @@ BOOL KSBallIsHUDProcess(void) {
 @property (nonatomic) BOOL ownsFrontBoardHUDScene;
 @property (nonatomic, copy) NSString *frontBoardStatusDescription;
 
-- (BOOL)createFrontBoardHUDScene;
+- (BOOL)createFrontBoardHUDSceneForWindowScene:(UIWindowScene *)windowScene;
 - (BOOL)spawnHUDProcess;
 - (BOOL)hasLiveHUDProcess;
 @end
@@ -169,6 +160,11 @@ BOOL KSBallIsHUDProcess(void) {
 - (void)connectHUDWindow:(UIWindow *)window session:(UISceneSession *)session {
     self.hudWindow = window;
     self.hudSession = session;
+    BOOL frontBoardSceneReady = YES;
+    if (KSBallIsHUDProcess()) {
+        self.frontBoardReady = KSBallPrepareFrontBoardSystemShell();
+        frontBoardSceneReady = self.frontBoardReady && [self createFrontBoardHUDSceneForWindowScene:window.windowScene];
+    }
     FloatingHUDViewController *controller = [[FloatingHUDViewController alloc] initWithSettingsStore:self.settingsStore applicationBridge:self.applicationBridge];
     __weak typeof(self) weakSelf = self;
     controller.openConfigurationHandler = ^{
@@ -183,7 +179,9 @@ BOOL KSBallIsHUDProcess(void) {
         self.frontBoardStatusDescription = @"HUD 场景已连接，但当前已停用。";
         return;
     }
-    self.frontBoardStatusDescription = @"FrontBoard HUD 已显示。";
+    if (frontBoardSceneReady) {
+        self.frontBoardStatusDescription = @"FrontBoard HUD 已显示。";
+    }
 }
 
 - (void)disconnectHUDSession:(UISceneSession *)session {
@@ -219,7 +217,7 @@ BOOL KSBallIsHUDProcess(void) {
     }
 }
 
-- (BOOL)createFrontBoardHUDScene {
+- (BOOL)createFrontBoardHUDSceneForWindowScene:(UIWindowScene *)windowScene {
     if (self.frontBoardHUDScene) {
         self.frontBoardStatusDescription = @"FrontBoard HUD 场景已创建。";
         return YES;
@@ -232,13 +230,11 @@ BOOL KSBallIsHUDProcess(void) {
     Class identityClass = NSClassFromString(@"FBSSceneIdentity");
     Class clientIdentityClass = NSClassFromString(@"FBSSceneClientIdentity");
     Class parametersClass = NSClassFromString(@"FBSMutableSceneParameters");
-    Class settingsClass = NSClassFromString(@"UIMutableApplicationSceneSettings");
-    Class clientSettingsClass = NSClassFromString(@"UIMutableApplicationSceneClientSettings");
     Class managerClass = NSClassFromString(@"FBSceneManager");
     Class binderClass = NSClassFromString(@"UIRootWindowScenePresentationBinder");
 
     id definition = [self objectFromClass:definitionClass selector:@"definition" argument:nil];
-    id identity = [self objectFromClass:identityClass selector:@"identityForIdentifier:" argument:KSBallHUDSceneIdentifier];
+    id identity = [self objectFromClass:identityClass selector:@"identityForIdentifier:" argument:NSBundle.mainBundle.bundleIdentifier];
     id clientIdentity = [self objectFromClass:clientIdentityClass selector:@"localIdentity" argument:nil];
     [self sendObject:identity toObject:definition selector:@"setIdentity:"];
     [self sendObject:clientIdentity toObject:definition selector:@"setClientIdentity:"];
@@ -252,24 +248,23 @@ BOOL KSBallIsHUDProcess(void) {
         return NO;
     }
 
-    UIScreen *screen = UIScreen.mainScreen;
-    id settings = [settingsClass new];
-    id displayConfiguration = [self objectFromObject:screen selector:@"displayConfiguration" argument:nil];
-    if (displayConfiguration) {
-        [self sendObject:displayConfiguration toObject:settings selector:@"setDisplayConfiguration:"];
+    id effectiveSettings = [self objectFromObject:windowScene selector:@"_effectiveSettings" argument:nil];
+    id settings = [effectiveSettings mutableCopy];
+    if (!settings) {
+        self.frontBoardStatusDescription = @"无法读取 HUD 场景的有效设置。";
+        return NO;
     }
-    [self sendFrame:screen.bounds toObject:settings selector:@"setFrame:"];
-    [self sendInteger:KSBallHUDSceneLevel toObject:settings selector:@"setLevel:"];
     [self sendInteger:YES toObject:settings selector:@"setForeground:"];
-    [self sendInteger:UIInterfaceOrientationPortrait toObject:settings selector:@"setInterfaceOrientation:"];
-    [self sendInteger:YES toObject:settings selector:@"setDeviceOrientationEventsEnabled:"];
-    id ignoredOcclusionReasons = [self objectFromObject:settings selector:@"ignoreOcclusionReasons" argument:nil];
-    [self sendObject:@"SystemApp" toObject:ignoredOcclusionReasons selector:@"addObject:"];
+    [self sendInteger:0 toObject:settings selector:@"setDeactivationReasons:"];
+    [self sendInteger:0 toObject:settings selector:@"setInterruptionPolicy:"];
+    id displayConfiguration = [self objectFromObject:settings selector:@"displayConfiguration" argument:nil];
     [self sendObject:settings toObject:parameters selector:@"setSettings:"];
 
-    id clientSettings = [clientSettingsClass new];
-    [self sendInteger:YES toObject:clientSettings selector:@"setForeground:"];
-    [self sendInteger:UIInterfaceOrientationPortrait toObject:clientSettings selector:@"setInterfaceOrientation:"];
+    id clientSettings = [self objectFromObject:windowScene selector:@"_effectiveUIClientSettings" argument:nil];
+    if (!clientSettings) {
+        self.frontBoardStatusDescription = @"无法读取 HUD 场景的客户端设置。";
+        return NO;
+    }
     [self sendObject:clientSettings toObject:parameters selector:@"setClientSettings:"];
 
     id manager = [self objectFromClass:managerClass selector:@"sharedInstance" argument:nil];
@@ -290,7 +285,7 @@ BOOL KSBallIsHUDProcess(void) {
     [self sendObject:scene toObject:self.presentationBinder selector:@"addScene:"];
     self.frontBoardHUDScene = scene;
     self.ownsFrontBoardHUDScene = YES;
-    self.frontBoardStatusDescription = @"FrontBoard HUD 场景已创建，等待 HUD 窗口连接。";
+    self.frontBoardStatusDescription = @"FrontBoard HUD 场景已绑定到 UIKit 窗口。";
     return YES;
 }
 
@@ -328,15 +323,12 @@ BOOL KSBallIsHUDProcess(void) {
         return;
     }
 
-    __weak typeof(self) weakSelf = self;
     self.frontBoardStatusDescription = @"HUD 子进程正在初始化 FrontBoard。";
-    self.frontBoardReady = YES;
-    BOOL initialized = KSBallPrepareFrontBoardSystemShellWithBlock(^{
-        [weakSelf createFrontBoardHUDScene];
-    });
-    self.frontBoardReady = initialized;
-    if (!initialized) {
+    self.frontBoardReady = KSBallPrepareFrontBoardSystemShell();
+    if (!self.frontBoardReady) {
         self.frontBoardStatusDescription = @"无法初始化 FrontBoard 系统壳。请确认 TrollStore 权限。";
+    } else {
+        self.frontBoardStatusDescription = @"FrontBoard 已就绪，等待 HUD 窗口连接。";
     }
 }
 
@@ -515,13 +507,6 @@ BOOL KSBallIsHUDProcess(void) {
     SEL selector = NSSelectorFromString(selectorName);
     if (object && [object respondsToSelector:selector]) {
         ((void (*)(id, SEL, NSInteger))objc_msgSend)(object, selector, argument);
-    }
-}
-
-- (void)sendFrame:(CGRect)frame toObject:(id)object selector:(NSString *)selectorName {
-    SEL selector = NSSelectorFromString(selectorName);
-    if (object && [object respondsToSelector:selector]) {
-        ((void (*)(id, SEL, CGRect))objc_msgSend)(object, selector, frame);
     }
 }
 
