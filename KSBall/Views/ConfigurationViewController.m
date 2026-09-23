@@ -43,6 +43,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self.settingsStore reload];
     [self.tableView reloadData];
 }
 

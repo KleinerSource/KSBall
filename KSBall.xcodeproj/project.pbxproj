@@ -22,6 +22,7 @@
 		A00000000000000000000212 /* ConfigurationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000147 /* ConfigurationViewController.m */; };
 		A00000000000000000000213 /* AppPickerViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000149 /* AppPickerViewController.m */; };
 		A00000000000000000000214 /* HUDTouchEventBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000135 /* HUDTouchEventBridge.m */; };
+		A00000000000000000000215 /* KSBallSharedStorage.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000151 /* KSBallSharedStorage.m */; };
 		A00000000000000000000230 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000180 /* UIKit.framework */; };
 		A00000000000000000000231 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000181 /* Foundation.framework */; };
 		A00000000000000000000240 /* KSBallSettingsStoreTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000160 /* KSBallSettingsStoreTests.m */; };
@@ -72,6 +73,8 @@
 		A00000000000000000000147 /* ConfigurationViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ConfigurationViewController.m; sourceTree = "<group>"; };
 		A00000000000000000000148 /* AppPickerViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppPickerViewController.h; sourceTree = "<group>"; };
 		A00000000000000000000149 /* AppPickerViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppPickerViewController.m; sourceTree = "<group>"; };
+		A00000000000000000000150 /* KSBallSharedStorage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KSBallSharedStorage.h; sourceTree = "<group>"; };
+		A00000000000000000000151 /* KSBallSharedStorage.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallSharedStorage.m; sourceTree = "<group>"; };
 		A00000000000000000000160 /* KSBallSettingsStoreTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallSettingsStoreTests.m; sourceTree = "<group>"; };
 		A00000000000000000000161 /* KSBallFanLayoutTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallFanLayoutTests.m; sourceTree = "<group>"; };
 		A00000000000000000000162 /* SystemApplicationBridgeTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SystemApplicationBridgeTests.m; sourceTree = "<group>"; };
@@ -154,6 +157,8 @@
 				A00000000000000000000133 /* HUDSceneCoordinator.m */,
 				A00000000000000000000134 /* HUDTouchEventBridge.h */,
 				A00000000000000000000135 /* HUDTouchEventBridge.m */,
+				A00000000000000000000150 /* KSBallSharedStorage.h */,
+				A00000000000000000000151 /* KSBallSharedStorage.m */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -294,6 +299,7 @@
 				A00000000000000000000207 /* SystemApplicationBridge.m in Sources */,
 				A00000000000000000000208 /* HUDSceneCoordinator.m in Sources */,
 				A00000000000000000000214 /* HUDTouchEventBridge.m in Sources */,
+				A00000000000000000000215 /* KSBallSharedStorage.m in Sources */,
 				A00000000000000000000209 /* KSBallFanLayout.m in Sources */,
 				A00000000000000000000210 /* PassthroughHUDWindow.m in Sources */,
 				A00000000000000000000211 /* FloatingHUDViewController.m in Sources */,

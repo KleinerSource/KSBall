@@ -1,4 +1,5 @@
 #import "KSBallSettingsStore.h"
+#import "KSBallSharedStorage.h"
 
 NSNotificationName const KSBallSettingsDidChangeNotification = @"KSBallSettingsDidChangeNotification";
 static NSString * const KSBallSettingsDefaultsKey = @"KSBall.Settings";
@@ -6,7 +7,9 @@ static NSString * const KSBallSettingsDefaultsKey = @"KSBall.Settings";
 @interface KSBallSettingsStore ()
 @property (nonatomic, strong) NSUserDefaults *userDefaults;
 @property (nonatomic, copy) NSString *defaultsKey;
+@property (nonatomic, copy, nullable) NSString *sharedStorageKey;
 @property (nonatomic, copy, readwrite) KSBallSettings *settings;
+- (instancetype)initWithUserDefaults:(NSUserDefaults *)userDefaults key:(NSString *)key sharedStorageKey:(nullable NSString *)sharedStorageKey;
 @end
 
 @implementation KSBallSettingsStore
@@ -15,23 +18,32 @@ static NSString * const KSBallSettingsDefaultsKey = @"KSBall.Settings";
     static KSBallSettingsStore *store;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        store = [[self alloc] initWithUserDefaults:NSUserDefaults.standardUserDefaults key:KSBallSettingsDefaultsKey];
+        store = [[self alloc] initWithUserDefaults:NSUserDefaults.standardUserDefaults key:KSBallSettingsDefaultsKey sharedStorageKey:@"settings.json"];
     });
     return store;
 }
 
 - (instancetype)initWithUserDefaults:(NSUserDefaults *)userDefaults key:(NSString *)key {
+    return [self initWithUserDefaults:userDefaults key:key sharedStorageKey:nil];
+}
+
+- (instancetype)initWithUserDefaults:(NSUserDefaults *)userDefaults key:(NSString *)key sharedStorageKey:(NSString *)sharedStorageKey {
     self = [super init];
     if (self) {
         _userDefaults = userDefaults;
         _defaultsKey = [key copy];
+        _sharedStorageKey = [sharedStorageKey copy];
         [self reload];
     }
     return self;
 }
 
 - (void)reload {
-    NSData *data = [self.userDefaults dataForKey:self.defaultsKey];
+    NSData *data = self.sharedStorageKey ? [KSBallSharedStorage dataForKey:self.sharedStorageKey] : nil;
+    BOOL hasSharedData = data != nil;
+    if (!data) {
+        data = [self.userDefaults dataForKey:self.defaultsKey];
+    }
     NSDictionary *dictionary = nil;
     if (data) {
         id value = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
@@ -40,15 +52,25 @@ static NSString * const KSBallSettingsDefaultsKey = @"KSBall.Settings";
         }
     }
     self.settings = [KSBallSettings settingsFromDictionary:dictionary];
+    if (self.sharedStorageKey && !hasSharedData) {
+        NSData *sharedData = [NSJSONSerialization dataWithJSONObject:self.settings.dictionaryRepresentation options:0 error:nil];
+        if (sharedData) {
+            [KSBallSharedStorage setData:sharedData forKey:self.sharedStorageKey];
+        }
+    }
 }
 
 - (void)mutateSettings:(void (NS_NOESCAPE ^)(KSBallSettings *settings))mutation {
+    [self reload];
     mutation(self.settings);
     [self.settings normalize];
     NSDictionary *dictionary = self.settings.dictionaryRepresentation;
     NSData *data = [NSJSONSerialization dataWithJSONObject:dictionary options:0 error:nil];
     if (data) {
         [self.userDefaults setObject:data forKey:self.defaultsKey];
+        if (self.sharedStorageKey) {
+            [KSBallSharedStorage setData:data forKey:self.sharedStorageKey];
+        }
     }
     [[NSNotificationCenter defaultCenter] postNotificationName:KSBallSettingsDidChangeNotification object:self];
 }

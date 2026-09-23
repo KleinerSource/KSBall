@@ -1,5 +1,6 @@
 #import "HUDSceneCoordinator.h"
 #import "KSBallSettingsStore.h"
+#import "KSBallSharedStorage.h"
 #import "SystemApplicationBridge.h"
 #import "HUDTouchEventBridge.h"
 #import "FloatingHUDViewController.h"
@@ -15,8 +16,8 @@
 
 static const char * const KSBallHUDProcessArgument = "-hud";
 static NSString * const KSBallHUDProcessIdentifierDefaultsKey = @"KSBallHUDProcessIdentifier";
-static NSString * const KSBallHUDReadyProcessIdentifierDefaultsKey = @"KSBallHUDReadyProcessIdentifier";
-static NSString * const KSBallHUDStatusDescriptionDefaultsKey = @"KSBallHUDStatusDescription";
+static NSString * const KSBallHUDReadyProcessIdentifierStorageKey = @"HUDReadyProcessIdentifier";
+static NSString * const KSBallHUDStatusDescriptionStorageKey = @"HUDStatusDescription";
 static const uid_t KSBallApplicationPersonaIdentifier = 99;
 static const uint32_t KSBallApplicationPersonaFlags = 1;
 static const short KSBallApplicationSpawnFlags = 2;
@@ -113,9 +114,8 @@ BOOL KSBallIsHUDProcess(void) {
 - (void)setFrontBoardStatusDescription:(NSString *)frontBoardStatusDescription {
     _frontBoardStatusDescription = [frontBoardStatusDescription copy];
     if (KSBallIsHUDProcess() && _frontBoardStatusDescription.length > 0) {
-        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-        [defaults setObject:_frontBoardStatusDescription forKey:KSBallHUDStatusDescriptionDefaultsKey];
-        [defaults synchronize];
+        NSData *statusData = [_frontBoardStatusDescription dataUsingEncoding:NSUTF8StringEncoding];
+        [KSBallSharedStorage setData:statusData forKey:KSBallHUDStatusDescriptionStorageKey];
     }
 }
 
@@ -151,14 +151,17 @@ BOOL KSBallIsHUDProcess(void) {
         return self.hudWindow != nil && !self.hudWindow.hidden && self.accessibilityWindowHostingController != nil;
     }
     if (![self hasLiveHUDProcess]) {
-        NSString *childStatus = [NSUserDefaults.standardUserDefaults stringForKey:KSBallHUDStatusDescriptionDefaultsKey];
+        NSData *statusData = [KSBallSharedStorage dataForKey:KSBallHUDStatusDescriptionStorageKey];
+        NSString *childStatus = [[NSString alloc] initWithData:statusData encoding:NSUTF8StringEncoding];
         self.frontBoardStatusDescription = childStatus.length > 0 ? [NSString stringWithFormat:@"HUD 子进程已退出；最后阶段：%@", childStatus] : @"HUD 子进程未运行。";
         return NO;
     }
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     pid_t processIdentifier = (pid_t)[defaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey];
-    BOOL ready = [defaults integerForKey:KSBallHUDReadyProcessIdentifierDefaultsKey] == processIdentifier;
-    NSString *childStatus = [defaults stringForKey:KSBallHUDStatusDescriptionDefaultsKey];
+    NSData *readyData = [KSBallSharedStorage dataForKey:KSBallHUDReadyProcessIdentifierStorageKey];
+    BOOL ready = (pid_t)[[[NSString alloc] initWithData:readyData encoding:NSUTF8StringEncoding] intValue] == processIdentifier;
+    NSData *statusData = [KSBallSharedStorage dataForKey:KSBallHUDStatusDescriptionStorageKey];
+    NSString *childStatus = [[NSString alloc] initWithData:statusData encoding:NSUTF8StringEncoding];
     if (childStatus.length > 0) {
         self.frontBoardStatusDescription = childStatus;
     } else if (ready) {
@@ -236,9 +239,7 @@ BOOL KSBallIsHUDProcess(void) {
     }
 
     [self destroyFrontBoardHUDScene];
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-    [defaults synchronize];
+    [KSBallSharedStorage removeDataForKey:KSBallHUDReadyProcessIdentifierStorageKey];
     self.frontBoardStatusDescription = @"HUD 窗口已注销，子进程正在退出。";
 }
 
@@ -291,8 +292,8 @@ BOOL KSBallIsHUDProcess(void) {
             NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
             if (stopped && [defaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey] == processIdentifier) {
                 [defaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
-                [defaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-                [defaults removeObjectForKey:KSBallHUDStatusDescriptionDefaultsKey];
+                [KSBallSharedStorage removeDataForKey:KSBallHUDReadyProcessIdentifierStorageKey];
+                [KSBallSharedStorage removeDataForKey:KSBallHUDStatusDescriptionStorageKey];
                 [defaults synchronize];
             }
             self.hudProcessStopping = NO;
@@ -337,9 +338,8 @@ BOOL KSBallIsHUDProcess(void) {
         self.frontBoardStatusDescription = [NSString stringWithFormat:@"KeepScene 已连接，但 FrontBoard HUD 场景创建失败：%@", failure];
     }
     if (KSBallIsHUDProcess() && self.accessibilityWindowRegistered) {
-        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-        [defaults setInteger:getpid() forKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-        [defaults synchronize];
+        NSData *readyData = [[NSString stringWithFormat:@"%d", getpid()] dataUsingEncoding:NSUTF8StringEncoding];
+        [KSBallSharedStorage setData:readyData forKey:KSBallHUDReadyProcessIdentifierStorageKey];
     }
 }
 
@@ -401,9 +401,7 @@ BOOL KSBallIsHUDProcess(void) {
         self.hudWindow = nil;
         self.hudSession = nil;
         [self destroyFrontBoardHUDScene];
-        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-        [defaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-        [defaults synchronize];
+        [KSBallSharedStorage removeDataForKey:KSBallHUDReadyProcessIdentifierStorageKey];
         self.frontBoardStatusDescription = @"HUD 场景已断开，窗口已清理。";
     }
 }
@@ -558,10 +556,8 @@ BOOL KSBallIsHUDProcess(void) {
 
     const char *executable = executablePath.fileSystemRepresentation;
     char *arguments[] = { (char *)executable, (char *)KSBallHUDProcessArgument, NULL };
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    [defaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-    [defaults removeObjectForKey:KSBallHUDStatusDescriptionDefaultsKey];
-    [defaults synchronize];
+    [KSBallSharedStorage removeDataForKey:KSBallHUDReadyProcessIdentifierStorageKey];
+    [KSBallSharedStorage removeDataForKey:KSBallHUDStatusDescriptionStorageKey];
     posix_spawnattr_t attributes;
     int result = posix_spawnattr_init(&attributes);
     if (result != 0) {
@@ -670,7 +666,7 @@ BOOL KSBallIsHUDProcess(void) {
     int processStatus = 0;
     if (waitpid(processIdentifier, &processStatus, WNOHANG) == processIdentifier) {
         [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
-        [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+        [KSBallSharedStorage removeDataForKey:KSBallHUDReadyProcessIdentifierStorageKey];
         [NSUserDefaults.standardUserDefaults synchronize];
         return NO;
     }
@@ -678,7 +674,7 @@ BOOL KSBallIsHUDProcess(void) {
         return YES;
     }
     [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+    [KSBallSharedStorage removeDataForKey:KSBallHUDReadyProcessIdentifierStorageKey];
     [NSUserDefaults.standardUserDefaults synchronize];
     return NO;
 }
