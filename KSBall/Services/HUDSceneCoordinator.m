@@ -115,6 +115,7 @@ int KSBallRunHUDProcess(void) {
 @property (nonatomic, strong) KSBallSettingsStore *settingsStore;
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
 @property (nonatomic, strong, nullable) UIWindow *hudWindow;
+@property (nonatomic, strong, nullable) UIWindow *hudBootstrapWindow;
 @property (nonatomic, strong, nullable) UISceneSession *hudSession;
 @property (nonatomic, strong, nullable) id frontBoardHUDScene;
 @property (nonatomic, strong, nullable) id presentationBinder;
@@ -188,6 +189,7 @@ int KSBallRunHUDProcess(void) {
         NSLog(@"KSBall HUD window registration failed: %@", self.frontBoardStatusDescription);
         return NO;
     }
+    self.hudBootstrapWindow = window;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     [defaults setInteger:getpid() forKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
     [defaults synchronize];
@@ -266,9 +268,16 @@ int KSBallRunHUDProcess(void) {
     }
 
     [self unregisterHUDWindowFromAccessibilityHost];
-    self.hudWindow.hidden = YES;
-    self.hudWindow.rootViewController = nil;
+    UIWindow *sceneWindow = self.hudWindow;
+    UIWindow *bootstrapWindow = self.hudBootstrapWindow;
+    sceneWindow.hidden = YES;
+    sceneWindow.rootViewController = nil;
+    if (bootstrapWindow != sceneWindow) {
+        bootstrapWindow.hidden = YES;
+        bootstrapWindow.rootViewController = nil;
+    }
     self.hudWindow = nil;
+    self.hudBootstrapWindow = nil;
 
     UISceneSession *session = self.hudSession;
     self.hudSession = nil;
@@ -352,17 +361,7 @@ int KSBallRunHUDProcess(void) {
         self.frontBoardReady = KSBallPrepareFrontBoardSystemShell();
         frontBoardSceneReady = self.frontBoardReady && [self createFrontBoardHUDSceneForWindowScene:window.windowScene];
     }
-    [self configureHUDWindow:window windowLevel:10000010.0];
-    if (KSBallIsHUDProcess()) {
-        if (![self registerHUDWindowWithAccessibilityHost:window]) {
-            window.hidden = YES;
-            NSLog(@"KSBall HUD window registration failed: %@", self.frontBoardStatusDescription);
-            return;
-        }
-        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-        [defaults setInteger:getpid() forKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
-        [defaults synchronize];
-    }
+    [self configureHUDWindow:window windowLevel:UIWindowLevelAlert + 2.0];
     if (window.hidden) {
         self.frontBoardStatusDescription = @"HUD 场景已连接，但当前已停用。";
         return;
@@ -424,8 +423,18 @@ int KSBallRunHUDProcess(void) {
 - (void)disconnectHUDSession:(UISceneSession *)session {
     if ([session.persistentIdentifier isEqualToString:self.hudSession.persistentIdentifier]) {
         [self unregisterHUDWindowFromAccessibilityHost];
+        UIWindow *sceneWindow = self.hudWindow;
+        UIWindow *bootstrapWindow = self.hudBootstrapWindow;
+        sceneWindow.hidden = YES;
+        sceneWindow.rootViewController = nil;
+        if (bootstrapWindow != sceneWindow) {
+            bootstrapWindow.hidden = YES;
+            bootstrapWindow.rootViewController = nil;
+        }
         self.hudWindow = nil;
+        self.hudBootstrapWindow = nil;
         self.hudSession = nil;
+        [self destroyFrontBoardHUDScene];
     }
 }
 
