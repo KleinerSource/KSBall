@@ -8,12 +8,14 @@
 #import <objc/message.h>
 #import <signal.h>
 #import <spawn.h>
+#import <stdlib.h>
 #import <string.h>
+#import <sys/wait.h>
 #import <unistd.h>
 
-NSString * const KSBallHUDActivityType = @"com.kleinersource.ksball.hud";
 static const char * const KSBallHUDProcessArgument = "-hud";
 static NSString * const KSBallHUDProcessIdentifierDefaultsKey = @"KSBallHUDProcessIdentifier";
+static NSString * const KSBallHUDReadyProcessIdentifierDefaultsKey = @"KSBallHUDReadyProcessIdentifier";
 static const uid_t KSBallApplicationPersonaIdentifier = 99;
 static const uint32_t KSBallApplicationPersonaFlags = 1;
 static const short KSBallApplicationSpawnFlags = 2;
@@ -30,6 +32,11 @@ static int KSBallConfigureBasicSpawnAttributes(posix_spawnattr_t *attributes) {
         return result;
     }
     return posix_spawnattr_setflags(attributes, KSBallApplicationSpawnFlags);
+}
+
+static void *KSBallLookupSymbol(void *frameworkHandle, const char *symbolName) {
+    void *symbol = dlsym(RTLD_DEFAULT, symbolName);
+    return symbol ?: (frameworkHandle ? dlsym(frameworkHandle, symbolName) : NULL);
 }
 
 BOOL KSBallPrepareFrontBoardSystemShell(void) {
@@ -53,18 +60,67 @@ BOOL KSBallIsHUDProcess(void) {
     return [NSProcessInfo.processInfo.arguments containsObject:argument];
 }
 
-@interface HUDSceneCoordinator ()
+@interface KSBallHUDApplication : UIApplication
+@end
+
+@implementation KSBallHUDApplication
+@end
+
+int KSBallRunHUDProcess(void) {
+    void *graphicsServices = dlopen("/System/Library/PrivateFrameworks/GraphicsServices.framework/GraphicsServices", RTLD_LAZY | RTLD_GLOBAL);
+    void *backBoardServices = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_LAZY | RTLD_GLOBAL);
+    void *springBoardServices = dlopen("/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices", RTLD_LAZY | RTLD_GLOBAL);
+
+    typedef void (*KSBallInitializeFunction)(void);
+    typedef void (*KSBallInstantiateApplicationFunction)(id);
+    KSBallInitializeFunction initializeGraphics = (KSBallInitializeFunction)KSBallLookupSymbol(graphicsServices, "GSInitialize");
+    KSBallInitializeFunction startDisplayServices = (KSBallInitializeFunction)KSBallLookupSymbol(backBoardServices, "BKSDisplayServicesStart");
+    KSBallInitializeFunction initializeApplication = (KSBallInitializeFunction)KSBallLookupSymbol(backBoardServices, "UIApplicationInitialize");
+    KSBallInstantiateApplicationFunction instantiateApplication = (KSBallInstantiateApplicationFunction)KSBallLookupSymbol(backBoardServices, "UIApplicationInstantiateSingleton");
+    if (!graphicsServices || !backBoardServices || !springBoardServices || !initializeGraphics || !startDisplayServices || !initializeApplication || !instantiateApplication) {
+        NSLog(@"KSBall HUD plugin initialization symbols are unavailable.");
+        return EXIT_FAILURE;
+    }
+
+    initializeGraphics();
+    startDisplayServices();
+    initializeApplication();
+    instantiateApplication(KSBallHUDApplication.class);
+
+    HUDSceneCoordinator *coordinator = HUDSceneCoordinator.sharedCoordinator;
+    UIApplication *application = UIApplication.sharedApplication;
+    application.delegate = (id<UIApplicationDelegate>)coordinator;
+    SEL accessibilityInitSelector = NSSelectorFromString(@"_accessibilityInit");
+    if ([application respondsToSelector:accessibilityInitSelector]) {
+        ((void (*)(id, SEL))objc_msgSend)(application, accessibilityInitSelector);
+    }
+    [NSRunLoop currentRunLoop];
+
+    SEL completeAsPluginSelector = NSSelectorFromString(@"__completeAndRunAsPlugin");
+    if (![application respondsToSelector:completeAsPluginSelector]) {
+        NSLog(@"KSBall HUD plugin entry point is unavailable.");
+        return EXIT_FAILURE;
+    }
+    ((void (*)(id, SEL))objc_msgSend)(application, completeAsPluginSelector);
+    CFRunLoopRun();
+    return EXIT_SUCCESS;
+}
+
+@interface HUDSceneCoordinator () <UIApplicationDelegate>
 @property (nonatomic, strong) KSBallSettingsStore *settingsStore;
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
 @property (nonatomic, strong, nullable) UIWindow *hudWindow;
 @property (nonatomic, strong, nullable) UISceneSession *hudSession;
 @property (nonatomic, strong, nullable) id frontBoardHUDScene;
 @property (nonatomic, strong, nullable) id presentationBinder;
+@property (nonatomic, strong, nullable) id accessibilityWindowHostingController;
 @property (nonatomic) BOOL frontBoardReady;
 @property (nonatomic) BOOL ownsFrontBoardHUDScene;
 @property (nonatomic, copy) NSString *frontBoardStatusDescription;
 
 - (BOOL)createFrontBoardHUDSceneForWindowScene:(UIWindowScene *)windowScene;
+- (void)configureHUDWindow:(UIWindow *)window windowLevel:(CGFloat)windowLevel;
+- (BOOL)registerHUDWindowWithAccessibilityHost:(UIWindow *)window;
 - (BOOL)spawnHUDProcess;
 - (BOOL)hasLiveHUDProcess;
 @end
@@ -95,11 +151,36 @@ BOOL KSBallIsHUDProcess(void) {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    UIWindow *window = [[PassthroughHUDWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    [self configureHUDWindow:window windowLevel:10000010.0];
+    if (![self registerHUDWindowWithAccessibilityHost:window]) {
+        NSLog(@"KSBall HUD window registration failed: %@", self.frontBoardStatusDescription);
+        return NO;
+    }
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setInteger:getpid() forKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+    [defaults synchronize];
+    self.frontBoardStatusDescription = @"HUD 窗口已注册到 SpringBoard。";
+    return YES;
+}
+
 - (BOOL)isHUDActive {
     if (KSBallIsHUDProcess()) {
-        return self.hudWindow != nil && !self.hudWindow.hidden;
+        return self.hudWindow != nil && !self.hudWindow.hidden && self.accessibilityWindowHostingController != nil;
     }
-    return [self hasLiveHUDProcess];
+    if (![self hasLiveHUDProcess]) {
+        return NO;
+    }
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    pid_t processIdentifier = (pid_t)[defaults integerForKey:KSBallHUDProcessIdentifierDefaultsKey];
+    BOOL ready = [defaults integerForKey:KSBallHUDReadyProcessIdentifierDefaultsKey] == processIdentifier;
+    if (ready) {
+        self.frontBoardStatusDescription = @"HUD 窗口已注册到 SpringBoard。";
+    } else {
+        self.frontBoardStatusDescription = @"HUD 子进程已启动，正在注册 SpringBoard 窗口。";
+    }
+    return ready;
 }
 
 - (void)activateHUD {
@@ -138,6 +219,8 @@ BOOL KSBallIsHUDProcess(void) {
             kill(processIdentifier, SIGTERM);
         }
         [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+        [NSUserDefaults.standardUserDefaults synchronize];
         self.frontBoardStatusDescription = @"HUD 子进程已停止。";
         return;
     }
@@ -165,16 +248,7 @@ BOOL KSBallIsHUDProcess(void) {
         self.frontBoardReady = KSBallPrepareFrontBoardSystemShell();
         frontBoardSceneReady = self.frontBoardReady && [self createFrontBoardHUDSceneForWindowScene:window.windowScene];
     }
-    FloatingHUDViewController *controller = [[FloatingHUDViewController alloc] initWithSettingsStore:self.settingsStore applicationBridge:self.applicationBridge];
-    __weak typeof(self) weakSelf = self;
-    controller.openConfigurationHandler = ^{
-        [weakSelf openConfiguration];
-    };
-    window.rootViewController = controller;
-    window.backgroundColor = UIColor.clearColor;
-    window.windowLevel = UIWindowLevelAlert + 2.0;
-    [window makeKeyAndVisible];
-    window.hidden = !self.settingsStore.settings.enabled;
+    [self configureHUDWindow:window windowLevel:UIWindowLevelAlert + 2.0];
     if (window.hidden) {
         self.frontBoardStatusDescription = @"HUD 场景已连接，但当前已停用。";
         return;
@@ -182,6 +256,41 @@ BOOL KSBallIsHUDProcess(void) {
     if (frontBoardSceneReady) {
         self.frontBoardStatusDescription = @"FrontBoard HUD 已显示。";
     }
+}
+
+- (void)configureHUDWindow:(UIWindow *)window windowLevel:(CGFloat)windowLevel {
+    self.hudWindow = window;
+    FloatingHUDViewController *controller = [[FloatingHUDViewController alloc] initWithSettingsStore:self.settingsStore applicationBridge:self.applicationBridge];
+    __weak typeof(self) weakSelf = self;
+    controller.openConfigurationHandler = ^{
+        [weakSelf openConfiguration];
+    };
+    window.rootViewController = controller;
+    window.backgroundColor = UIColor.clearColor;
+    window.windowLevel = windowLevel;
+    [window makeKeyAndVisible];
+    window.hidden = !self.settingsStore.settings.enabled;
+}
+
+- (BOOL)registerHUDWindowWithAccessibilityHost:(UIWindow *)window {
+    SEL contextIdentifierSelector = NSSelectorFromString(@"_contextId");
+    SEL registerWindowSelector = NSSelectorFromString(@"registerWindowWithContextID:atLevel:");
+    Class hostingControllerClass = NSClassFromString(@"SBSAccessibilityWindowHostingController");
+    if (!hostingControllerClass || ![window respondsToSelector:contextIdentifierSelector]) {
+        self.frontBoardStatusDescription = @"SpringBoard accessibility window host 不可用。";
+        return NO;
+    }
+
+    id hostingController = [hostingControllerClass new];
+    if (![hostingController respondsToSelector:registerWindowSelector]) {
+        self.frontBoardStatusDescription = @"SpringBoard accessibility window host 缺少注册接口。";
+        return NO;
+    }
+
+    unsigned int contextIdentifier = ((unsigned int (*)(id, SEL))objc_msgSend)(window, contextIdentifierSelector);
+    ((void (*)(id, SEL, unsigned int, double))objc_msgSend)(hostingController, registerWindowSelector, contextIdentifier, (double)window.windowLevel);
+    self.accessibilityWindowHostingController = hostingController;
+    return YES;
 }
 
 - (void)disconnectHUDSession:(UISceneSession *)session {
@@ -341,6 +450,8 @@ BOOL KSBallIsHUDProcess(void) {
 
     const char *executable = executablePath.fileSystemRepresentation;
     char *arguments[] = { (char *)executable, (char *)KSBallHUDProcessArgument, NULL };
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+    [NSUserDefaults.standardUserDefaults synchronize];
     posix_spawnattr_t attributes;
     int result = posix_spawnattr_init(&attributes);
     if (result != 0) {
@@ -430,6 +541,7 @@ BOOL KSBallIsHUDProcess(void) {
     }
 
     [NSUserDefaults.standardUserDefaults setInteger:processIdentifier forKey:KSBallHUDProcessIdentifierDefaultsKey];
+    [NSUserDefaults.standardUserDefaults synchronize];
     if (usedNormalFallback && personaFailure.length > 0) {
         self.frontBoardStatusDescription = [NSString stringWithFormat:@"HUD 子进程已启动（PID %d，普通模式；persona 不可用：%@）。", processIdentifier, personaFailure];
     } else if (usingPersona) {
@@ -445,10 +557,19 @@ BOOL KSBallIsHUDProcess(void) {
     if (processIdentifier <= 0) {
         return NO;
     }
+    int processStatus = 0;
+    if (waitpid(processIdentifier, &processStatus, WNOHANG) == processIdentifier) {
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+        [NSUserDefaults.standardUserDefaults synchronize];
+        return NO;
+    }
     if (kill(processIdentifier, 0) == 0 || errno == EPERM) {
         return YES;
     }
     [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDProcessIdentifierDefaultsKey];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:KSBallHUDReadyProcessIdentifierDefaultsKey];
+    [NSUserDefaults.standardUserDefaults synchronize];
     return NO;
 }
 

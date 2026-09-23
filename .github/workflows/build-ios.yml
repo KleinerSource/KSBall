@@ -88,8 +88,16 @@ jobs:
           assert_true_entitlement 'platform-application'
           assert_true_entitlement 'com.apple.QuartzCore.displayable-context'
           assert_true_entitlement 'com.apple.QuartzCore.secure-mode'
+          assert_true_entitlement 'com.apple.springboard.accessibility-window-hosting'
+          assert_true_entitlement 'user-preference-read'
+          assert_true_entitlement 'user-preference-write'
           assert_true_entitlement 'com.apple.private.persona-mgmt'
           assert_true_entitlement 'com.apple.private.security.no-sandbox'
+          signed_app_identifier="$(/usr/libexec/PlistBuddy -c 'Print :application-identifier' artifact/KSBall.entitlements.plist)"
+          if [[ "$signed_app_identifier" != 'com.kleinersource.ksball' ]]; then
+            echo "::error title=Invalid application identifier::Expected com.kleinersource.ksball, got $signed_app_identifier"
+            exit 1
+          fi
           cp -R "$app_path" artifact/Payload/KSBall.app
           ditto -c -k --sequesterRsrc --keepParent artifact/Payload artifact/KSBall.tipa
           shasum -a 256 artifact/KSBall.tipa | tee artifact/KSBall.tipa.sha256

@@ -13,13 +13,6 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     [HUDSceneCoordinator sharedCoordinator];
-    if (KSBallIsHUDProcess()) {
-        NSUserActivity *activity = [[NSUserActivity alloc] initWithActivityType:KSBallHUDActivityType];
-        activity.title = @"KSBall HUD";
-        [application requestSceneSessionActivation:nil userActivity:activity options:nil errorHandler:^(NSError * _Nonnull error) {
-            NSLog(@"KSBall HUD scene activation failed: %@", error.localizedDescription);
-        }];
-    }
     return YES;
 }
 

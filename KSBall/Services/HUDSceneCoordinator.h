@@ -5,9 +5,9 @@ NS_ASSUME_NONNULL_BEGIN
 @class KSBallSettingsStore;
 @class SystemApplicationBridge;
 
-FOUNDATION_EXPORT NSString * const KSBallHUDActivityType;
 FOUNDATION_EXPORT BOOL KSBallPrepareFrontBoardSystemShell(void);
 FOUNDATION_EXPORT BOOL KSBallIsHUDProcess(void);
+FOUNDATION_EXPORT int KSBallRunHUDProcess(void);
 
 @interface HUDSceneCoordinator : NSObject
 

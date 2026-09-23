@@ -2,6 +2,22 @@
 
 @implementation PassthroughHUDWindow
 
++ (BOOL)_isSystemWindow {
+    return YES;
+}
+
+- (BOOL)_isWindowServerHostingManaged {
+    return NO;
+}
+
+- (BOOL)_isSecure {
+    return YES;
+}
+
+- (BOOL)_shouldCreateContextAsSecure {
+    return YES;
+}
+
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hitView = [super hitTest:point withEvent:event];
     UIView *rootView = self.rootViewController.view;

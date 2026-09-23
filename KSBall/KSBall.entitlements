@@ -2,11 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>application-identifier</key>
+    <string>com.kleinersource.ksball</string>
     <key>platform-application</key>
     <true/>
     <key>com.apple.QuartzCore.displayable-context</key>
     <true/>
     <key>com.apple.QuartzCore.secure-mode</key>
+    <true/>
+    <key>com.apple.springboard.accessibility-window-hosting</key>
+    <true/>
+    <key>user-preference-read</key>
+    <true/>
+    <key>user-preference-write</key>
     <true/>
     <key>com.apple.backboard.client</key>
     <true/>
