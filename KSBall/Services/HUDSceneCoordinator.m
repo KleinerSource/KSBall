@@ -1,6 +1,7 @@
 #import "HUDSceneCoordinator.h"
 #import "KSBallSettingsStore.h"
 #import "SystemApplicationBridge.h"
+#import "HUDTouchEventBridge.h"
 #import "FloatingHUDViewController.h"
 #import "PassthroughHUDWindow.h"
 #import <dlfcn.h>
@@ -95,6 +96,10 @@ int KSBallRunHUDProcess(void) {
         ((void (*)(id, SEL))objc_msgSend)(application, accessibilityInitSelector);
     }
     [NSRunLoop currentRunLoop];
+    if (!KSBallRegisterHUDEventCallback()) {
+        NSLog(@"KSBall HUD touch event callback registration failed.");
+        return EXIT_FAILURE;
+    }
 
     SEL completeAsPluginSelector = NSSelectorFromString(@"__completeAndRunAsPlugin");
     if (![application respondsToSelector:completeAsPluginSelector]) {

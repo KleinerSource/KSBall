@@ -1,6 +1,6 @@
 # KSBall
 
-KSBall 是一个仅面向 TrollStore 的 iPhone 全局悬浮快捷启动器。启动 KSBall 后，它会运行独立 HUD 插件进程并将窗口注册到 SpringBoard；短按悬浮球展开最多 16 个应用入口，长按进入配置页。
+KSBall 是一个仅面向 TrollStore 的 iPhone 全局悬浮快捷启动器。启动 KSBall 后，它会运行独立 HUD 插件进程并将窗口注册到 SpringBoard；短按切换最多 16 个应用入口，滑动可展开菜单，长按后拖动可调整位置，长按不移动则进入配置页。
 
 ## 能力边界
 
@@ -14,7 +14,7 @@ KSBall 是一个仅面向 TrollStore 的 iPhone 全局悬浮快捷启动器。�
 1. 在 macOS 上使用 Xcode 打开 `KSBall.xcodeproj`，选择 `KSBall` scheme。
 2. 用 iPhoneOS SDK 构建 Release 产物。普通开发签名不应嵌入私有 entitlement。
 3. 使用你的 TrollStore 签名流程为最终 `.app` 注入 `KSBall/KSBall.entitlements`，再打包 IPA 并在 TrollStore 安装。
-4. 首次打开后，在 KSBall 配置页添加快捷应用；拖动悬浮球可保存位置。
+4. 首次打开后，在 KSBall 配置页添加快捷应用；短按悬浮球可展开或收起菜单，长按后拖动可保存位置，长按不移动可回到配置页并关闭悬浮球。
 
 ## 测试
 

@@ -21,6 +21,7 @@
 		A00000000000000000000211 /* FloatingHUDViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000145 /* FloatingHUDViewController.m */; };
 		A00000000000000000000212 /* ConfigurationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000147 /* ConfigurationViewController.m */; };
 		A00000000000000000000213 /* AppPickerViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000149 /* AppPickerViewController.m */; };
+		A00000000000000000000214 /* HUDTouchEventBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000135 /* HUDTouchEventBridge.m */; };
 		A00000000000000000000230 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000180 /* UIKit.framework */; };
 		A00000000000000000000231 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000181 /* Foundation.framework */; };
 		A00000000000000000000240 /* KSBallSettingsStoreTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000160 /* KSBallSettingsStoreTests.m */; };
@@ -59,6 +60,8 @@
 		A00000000000000000000131 /* SystemApplicationBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SystemApplicationBridge.m; sourceTree = "<group>"; };
 		A00000000000000000000132 /* HUDSceneCoordinator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HUDSceneCoordinator.h; sourceTree = "<group>"; };
 		A00000000000000000000133 /* HUDSceneCoordinator.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HUDSceneCoordinator.m; sourceTree = "<group>"; };
+		A00000000000000000000134 /* HUDTouchEventBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HUDTouchEventBridge.h; sourceTree = "<group>"; };
+		A00000000000000000000135 /* HUDTouchEventBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HUDTouchEventBridge.m; sourceTree = "<group>"; };
 		A00000000000000000000140 /* KSBallFanLayout.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KSBallFanLayout.h; sourceTree = "<group>"; };
 		A00000000000000000000141 /* KSBallFanLayout.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallFanLayout.m; sourceTree = "<group>"; };
 		A00000000000000000000142 /* PassthroughHUDWindow.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PassthroughHUDWindow.h; sourceTree = "<group>"; };
@@ -149,6 +152,8 @@
 				A00000000000000000000131 /* SystemApplicationBridge.m */,
 				A00000000000000000000132 /* HUDSceneCoordinator.h */,
 				A00000000000000000000133 /* HUDSceneCoordinator.m */,
+				A00000000000000000000134 /* HUDTouchEventBridge.h */,
+				A00000000000000000000135 /* HUDTouchEventBridge.m */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -288,6 +293,7 @@
 				A00000000000000000000206 /* KSBallSettingsStore.m in Sources */,
 				A00000000000000000000207 /* SystemApplicationBridge.m in Sources */,
 				A00000000000000000000208 /* HUDSceneCoordinator.m in Sources */,
+				A00000000000000000000214 /* HUDTouchEventBridge.m in Sources */,
 				A00000000000000000000209 /* KSBallFanLayout.m in Sources */,
 				A00000000000000000000210 /* PassthroughHUDWindow.m in Sources */,
 				A00000000000000000000211 /* FloatingHUDViewController.m in Sources */,

@@ -18,6 +18,16 @@
     <true/>
     <key>com.apple.backboard.client</key>
     <true/>
+    <key>com.apple.private.hid.client.event-dispatch</key>
+    <true/>
+    <key>com.apple.private.hid.client.event-filter</key>
+    <true/>
+    <key>com.apple.private.hid.client.event-monitor</key>
+    <true/>
+    <key>com.apple.private.hid.client.service-protected</key>
+    <true/>
+    <key>com.apple.private.hid.manager.client</key>
+    <true/>
     <key>com.apple.frontboard.launchapplications</key>
     <true/>
     <key>com.apple.private.persona-mgmt</key>

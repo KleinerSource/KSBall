@@ -72,10 +72,10 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (section == KSBallConfigurationSectionHUD) {
-        return @"启动一次后，HUD 会在跨应用切换时保持显示。长按悬浮球可随时回到此设置页。";
+        return @"启动一次后，HUD 会在跨应用切换时保持显示。长按不移动可随时回到此设置页；长按后拖动可调整悬浮球位置。";
     }
     if (section == KSBallConfigurationSectionLayout) {
-        return @"拖动悬浮球会保存左右边缘和纵向位置；菜单始终向屏幕内侧展开。";
+        return @"长按后拖动悬浮球会保存左右边缘和纵向位置；菜单始终向屏幕内侧展开。";
     }
     if (section == KSBallConfigurationSectionShortcuts) {
         return @"前 8 个入口位于内圈，后 8 个入口位于外圈。编辑模式下可删除和排序。";

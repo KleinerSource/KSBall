@@ -2,6 +2,7 @@
 #import "KSBallFanLayout.h"
 #import "KSBallSettingsStore.h"
 #import "SystemApplicationBridge.h"
+#import <math.h>
 
 @interface KSBallHUDCanvasView : UIView
 @property (nonatomic, copy) NSArray<UIView *> *interactiveViews;
@@ -20,7 +21,7 @@
 
 @end
 
-@interface FloatingHUDViewController ()
+@interface FloatingHUDViewController () <UIGestureRecognizerDelegate>
 @property (nonatomic, strong) KSBallSettingsStore *settingsStore;
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
 @property (nonatomic, strong) UIButton *floatingButton;
@@ -30,6 +31,11 @@
 @property (nonatomic) BOOL menuVisible;
 @property (nonatomic) BOOL isDragging;
 @property (nonatomic) BOOL ignoreNextTap;
+@property (nonatomic) BOOL longPressActive;
+@property (nonatomic) BOOL longPressMoved;
+@property (nonatomic) BOOL panOpenedMenu;
+@property (nonatomic) CFTimeInterval touchStartTime;
+@property (nonatomic) CGPoint touchStartLocation;
 @end
 
 @implementation FloatingHUDViewController
@@ -65,12 +71,18 @@
     self.floatingButton.layer.shadowOffset = CGSizeMake(0.0, 3.0);
     [self.floatingButton setImage:[UIImage systemImageNamed:@"circle.grid.2x2.fill"] forState:UIControlStateNormal];
     [self.floatingButton addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+    [self.floatingButton addTarget:self action:@selector(beginFloatingButtonPress:forEvent:) forControlEvents:UIControlEventTouchDown];
     [self.view addSubview:self.floatingButton];
 
     UIPanGestureRecognizer *panRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+    panRecognizer.delegate = self;
+    panRecognizer.cancelsTouchesInView = NO;
     [self.floatingButton addGestureRecognizer:panRecognizer];
     UILongPressGestureRecognizer *longPressRecognizer = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
     longPressRecognizer.minimumPressDuration = 0.55;
+    longPressRecognizer.allowableMovement = CGFLOAT_MAX;
+    longPressRecognizer.delegate = self;
+    longPressRecognizer.cancelsTouchesInView = NO;
     [self.floatingButton addGestureRecognizer:longPressRecognizer];
 
     self.feedbackLabel = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -240,13 +252,30 @@
     }
 }
 
+- (void)beginFloatingButtonPress:(UIButton *)sender forEvent:(UIEvent *)event {
+    (void)sender;
+    UITouch *touch = event.allTouches.anyObject;
+    self.touchStartTime = NSProcessInfo.processInfo.systemUptime;
+    self.touchStartLocation = touch ? [touch locationInView:self.view] : self.floatingButton.center;
+    self.panOpenedMenu = NO;
+    self.longPressMoved = NO;
+}
+
 - (void)handleLongPress:(UILongPressGestureRecognizer *)recognizer {
     if (recognizer.state == UIGestureRecognizerStateBegan) {
+        self.longPressActive = YES;
         self.ignoreNextTap = YES;
-        [self dismissMenuAnimated:YES];
-        if (self.openConfigurationHandler) {
-            self.openConfigurationHandler();
-        }
+        return;
+    }
+
+    if (recognizer.state == UIGestureRecognizerStateEnded && !self.longPressMoved && self.openConfigurationHandler) {
+        self.openConfigurationHandler();
+    }
+    if (recognizer.state == UIGestureRecognizerStateEnded || recognizer.state == UIGestureRecognizerStateCancelled || recognizer.state == UIGestureRecognizerStateFailed) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.ignoreNextTap = NO;
+            self.longPressActive = NO;
+        });
     }
 }
 
@@ -257,25 +286,58 @@
     CGFloat minY = CGRectGetMinY(safeBounds) + 28.0;
     CGFloat maxY = CGRectGetMaxY(safeBounds) - 28.0;
 
-    if (recognizer.state == UIGestureRecognizerStateBegan || recognizer.state == UIGestureRecognizerStateChanged) {
-        self.isDragging = YES;
-        [self dismissMenuAnimated:NO];
-        self.floatingButton.center = CGPointMake(location.x, MIN(MAX(location.y, minY), maxY));
+    if (recognizer.state == UIGestureRecognizerStateBegan) {
+        if (self.touchStartTime <= 0.0) {
+            self.touchStartTime = NSProcessInfo.processInfo.systemUptime;
+            self.touchStartLocation = location;
+        }
+        return;
+    }
+
+    if (recognizer.state == UIGestureRecognizerStateChanged) {
+        CGFloat dx = location.x - self.touchStartLocation.x;
+        CGFloat dy = location.y - self.touchStartLocation.y;
+        CGFloat distance = hypot(dx, dy);
+        BOOL shouldDrag = self.longPressActive;
+        if (shouldDrag) {
+            self.ignoreNextTap = YES;
+            self.longPressMoved = YES;
+            self.isDragging = YES;
+            [self dismissMenuAnimated:NO];
+            self.floatingButton.center = CGPointMake(location.x, MIN(MAX(location.y, minY), maxY));
+        } else if (distance >= 18.0 && !self.panOpenedMenu) {
+            self.ignoreNextTap = YES;
+            self.panOpenedMenu = YES;
+            if (!self.menuVisible) {
+                [self showMenu];
+            }
+        }
         return;
     }
 
     if (recognizer.state == UIGestureRecognizerStateEnded || recognizer.state == UIGestureRecognizerStateCancelled) {
-        KSBallEdge edge = self.floatingButton.center.x < CGRectGetMidX(self.view.bounds) ? KSBallEdgeLeft : KSBallEdgeRight;
-        CGFloat normalizedPosition = maxY > minY ? (self.floatingButton.center.y - minY) / (maxY - minY) : 0.5;
-        [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
-            settings.edge = edge;
-            settings.normalizedVerticalPosition = normalizedPosition;
-        }];
-        [self positionFloatingButton];
+        if (self.isDragging) {
+            KSBallEdge edge = self.floatingButton.center.x < CGRectGetMidX(self.view.bounds) ? KSBallEdgeLeft : KSBallEdgeRight;
+            CGFloat normalizedPosition = maxY > minY ? (self.floatingButton.center.y - minY) / (maxY - minY) : 0.5;
+            [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
+                settings.edge = edge;
+                settings.normalizedVerticalPosition = normalizedPosition;
+            }];
+            [self positionFloatingButton];
+        }
+        self.touchStartTime = 0.0;
         dispatch_async(dispatch_get_main_queue(), ^{
             self.isDragging = NO;
+            self.ignoreNextTap = NO;
+            self.longPressActive = NO;
+            self.longPressMoved = NO;
+            self.panOpenedMenu = NO;
         });
     }
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return YES;
 }
 
 - (void)showFeedback:(NSString *)message {
