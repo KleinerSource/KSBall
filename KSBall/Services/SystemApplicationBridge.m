@@ -198,20 +198,7 @@ UIImage *KSBallListIconImage(UIImage *icon) {
 
 - (UIImage *)iconForProxy:(id)proxy {
     NSString *bundleIdentifier = [self stringValueForObject:proxy selectors:@[@"applicationIdentifier", @"bundleIdentifier"]];
-    UIImage *icon = bundleIdentifier ? [self iconForBundleIdentifier:bundleIdentifier] : nil;
-    if (icon) {
-        return icon;
-    }
-
-    SEL selector = NSSelectorFromString(@"iconDataForVariant:");
-    if (![proxy respondsToSelector:selector]) {
-        selector = NSSelectorFromString(@"_iconDataForVariant:");
-    }
-    if (![proxy respondsToSelector:selector]) {
-        return nil;
-    }
-    id iconData = ((id (*)(id, SEL, NSInteger))objc_msgSend)(proxy, selector, 2);
-    return [iconData isKindOfClass:NSData.class] ? [UIImage imageWithData:iconData] : nil;
+    return bundleIdentifier ? [self iconForBundleIdentifier:bundleIdentifier] : nil;
 }
 
 - (UIImage *)iconForBundleIdentifier:(NSString *)bundleIdentifier {
@@ -227,8 +214,7 @@ UIImage *KSBallListIconImage(UIImage *icon) {
         return nil;
     }
 
-    // iconDataForVariant: 返回的是 LaunchServices 内部格式而非 PNG，UIImage 无法直接解码；
-    // UIKit 私有接口会直接返回已渲染好的主屏图标。格式 2 对应 60pt 主屏图标。
+    // UIKit 私有接口直接返回已渲染好的主屏图标，格式 2 对应 60pt 主屏图标。
     SEL selector = NSSelectorFromString(@"_applicationIconImageForBundleIdentifier:format:scale:");
     if (![UIImage respondsToSelector:selector]) {
         return nil;

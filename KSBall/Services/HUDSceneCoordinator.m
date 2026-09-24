@@ -455,9 +455,6 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
 }
 
 - (BOOL)isHUDActive {
-    if (KSBallIsHUDProcess()) {
-        return self.hudWindow != nil && !self.hudWindow.hidden && self.accessibilityWindowRegistered;
-    }
     if (![self hasLiveHUDProcess]) {
         NSData *statusData = [KSBallSharedStorage dataForKey:KSBallHUDStatusDescriptionStorageKey];
         NSString *childStatus = [[NSString alloc] initWithData:statusData encoding:NSUTF8StringEncoding];

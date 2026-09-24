@@ -72,29 +72,71 @@ static const NSUInteger KSBallFanMaximumShrinkAttempts = 16;
     CGFloat maximumRadius = CGRectGetWidth(safeBounds) - itemSize;
 
     // 第一圈刚好能在四分之一圆上并排 3 个图标（半圆约 5 个），且不压到把手。
-    CGFloat radius = MAX(itemRadius + KSBallFanHandleClearance, itemStep / (2.0 * sin(M_PI / 8.0)));
-    BOOL allFit = YES;
-    NSMutableArray<NSValue *> *centers = [NSMutableArray arrayWithCapacity:count];
-    NSUInteger remaining = count;
-    while (remaining > 0) {
-        // 角度相对“指向屏幕内侧的水平方向”，正值向下。每圈按自身半径计算上下可见范围，
-        // 所以内圈可以比外圈张得更开，整体贴合屏幕可显示的区域。
+    CGFloat firstRadius = MAX(itemRadius + KSBallFanHandleClearance, itemStep / (2.0 * sin(M_PI / 8.0)));
+    // 当前半径下这一圈上下可见的角度范围。角度相对“指向屏幕内侧的水平方向”，正值向下；
+    // 每圈按自身半径计算，所以内圈可以比外圈张得更开，整体贴合屏幕可显示的区域。
+    void (^visibleAngles)(CGFloat, CGFloat *, CGFloat *) = ^(CGFloat radius, CGFloat *lower, CGFloat *upper) {
         CGFloat upperAngle = spaceBelow >= radius ? M_PI_2 : asin(spaceBelow / radius);
         CGFloat lowerAngle = spaceAbove >= radius ? -M_PI_2 : -asin(spaceAbove / radius);
         CGFloat missingSweep = KSBallFanMinimumSweep - (upperAngle - lowerAngle);
         if (missingSweep > 0.0) {
-            // 上下空间都不足时向空间较大的一侧补足张角，超出的部分交给外层缩小图标处理。
+            // 上下空间都不足时向空间较大的一侧补足张角，超出部分由外层缩小图标处理。
             if (spaceBelow >= spaceAbove) {
                 upperAngle = MIN(M_PI_2, upperAngle + missingSweep);
             } else {
                 lowerAngle = MAX(-M_PI_2, lowerAngle - missingSweep);
             }
+        }
+        *lower = lowerAngle;
+        *upper = upperAngle;
+    };
+    // 弦长不小于 itemStep 时相邻图标保持设定的同圈间距。
+    NSUInteger (^capacityAt)(CGFloat, CGFloat) = ^NSUInteger(CGFloat radius, CGFloat sweep) {
+        CGFloat angleStep = 2.0 * asin(MIN(1.0, itemStep / (radius * 2.0)));
+        return (NSUInteger)floor(sweep / angleStep + 1e-6) + 1;
+    };
+
+    BOOL allFit = YES;
+    NSMutableArray<NSValue *> *centers = [NSMutableArray arrayWithCapacity:count];
+    NSUInteger remaining = count;
+    CGFloat previousRadius = 0.0;
+    for (NSUInteger ring = 0; remaining > 0; ring++) {
+        CGFloat radius = ring == 0 ? firstRadius : previousRadius + ringStep;
+        CGFloat lowerAngle = 0.0;
+        CGFloat upperAngle = 0.0;
+        visibleAngles(radius, &lowerAngle, &upperAngle);
+        NSUInteger capacity = capacityAt(radius, upperAngle - lowerAngle);
+        // 目标是每向外一圈多放 2 个（按四分之一圆计，即 3、5、7、9……，半圆为 5、9、13……）。
+        // 按圈间距排出的半径往往差一点点放不下，这时把这一圈再向外推，最多推半个圈距；
+        // 推得动就按目标数量排，推不动（屏幕边界或间距太大）就按实际能放下的数量排。
+        if (ring > 0) {
+            CGFloat quarterFraction = (upperAngle - lowerAngle) / M_PI_2;
+            NSUInteger target = (NSUInteger)lround((2.0 + 2.0 * ring) * quarterFraction) + 1;
+            if (capacity < target && target > 1) {
+                CGFloat angleStep = (upperAngle - lowerAngle) / (target - 1);
+                CGFloat targetRadius = itemStep / (2.0 * sin(MIN(angleStep, M_PI) / 2.0));
+                if (targetRadius - radius <= ringStep / 2.0) {
+                    CGFloat targetLower = 0.0;
+                    CGFloat targetUpper = 0.0;
+                    visibleAngles(targetRadius, &targetLower, &targetUpper);
+                    NSUInteger targetCapacity = capacityAt(targetRadius, targetUpper - targetLower);
+                    if (targetCapacity > capacity) {
+                        radius = targetRadius;
+                        lowerAngle = targetLower;
+                        upperAngle = targetUpper;
+                        capacity = targetCapacity;
+                    }
+                }
+            }
+        }
+        if (upperAngle - lowerAngle < KSBallFanMinimumSweep - 1e-6 ||
+            radius * sin(upperAngle) > spaceBelow + 0.001 ||
+            radius * sin(-lowerAngle) > spaceAbove + 0.001 ||
+            radius > maximumRadius + 0.001) {
             allFit = NO;
         }
+
         CGFloat sweep = upperAngle - lowerAngle;
-        // 弦长不小于 itemStep 时相邻图标保持设定的间距。
-        CGFloat angleStep = 2.0 * asin(MIN(1.0, itemStep / (radius * 2.0)));
-        NSUInteger capacity = (NSUInteger)floor(sweep / angleStep + 1e-6) + 1;
         NSUInteger ringCount = MIN(capacity, remaining);
         for (NSUInteger index = 0; index < ringCount; index++) {
             // 每圈铺满自己的可见张角，保持扇形轮廓；只有一个图标时放在张角中线上。
@@ -102,11 +144,8 @@ static const NSUInteger KSBallFanMaximumShrinkAttempts = 16;
             CGFloat angle = lowerAngle + sweep * progress;
             [centers addObject:[NSValue valueWithCGPoint:CGPointMake(center.x + direction * cos(angle) * radius, center.y + sin(angle) * radius)]];
         }
-        if (radius > maximumRadius + 0.001) {
-            allFit = NO;
-        }
         remaining -= ringCount;
-        radius += ringStep;
+        previousRadius = radius;
     }
     if (fits) {
         *fits = allFit;
