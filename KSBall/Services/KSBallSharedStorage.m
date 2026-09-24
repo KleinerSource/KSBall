@@ -1,12 +1,23 @@
 #import "KSBallSharedStorage.h"
 #import <sys/stat.h>
+#import <unistd.h>
 
 static NSString * const KSBallSharedStorageDirectory = @"/var/mobile/KSBall/UserDefaults";
+static const uid_t KSBallMobileUserIdentifier = 501;
+static const gid_t KSBallMobileGroupIdentifier = 501;
 
 @implementation KSBallSharedStorage
 
 + (NSString *)pathForKey:(NSString *)key {
     return [KSBallSharedStorageDirectory stringByAppendingPathComponent:key];
+}
+
+// HUD 子进程以 root persona 运行。它创建的目录和文件必须交还给 mobile，
+// 否则以 mobile 运行的主程序无法再写入设置，配置页的修改就不会同步到悬浮条。
++ (void)grantMobileAccessToPath:(NSString *)path {
+    if (geteuid() == 0) {
+        chown(path.fileSystemRepresentation, KSBallMobileUserIdentifier, KSBallMobileGroupIdentifier);
+    }
 }
 
 + (BOOL)ensureDirectory {
@@ -17,8 +28,11 @@ static NSString * const KSBallSharedStorageDirectory = @"/var/mobile/KSBall/User
                                                                   error:&error];
     if (!created) {
         NSLog(@"KSBall shared storage directory creation failed: %@", error.localizedDescription);
+        return NO;
     }
-    return created;
+    [self grantMobileAccessToPath:KSBallSharedStorageDirectory.stringByDeletingLastPathComponent];
+    [self grantMobileAccessToPath:KSBallSharedStorageDirectory];
+    return YES;
 }
 
 + (NSData *)dataForKey:(NSString *)key {
@@ -41,6 +55,7 @@ static NSString * const KSBallSharedStorageDirectory = @"/var/mobile/KSBall/User
         return NO;
     }
     chmod(path.fileSystemRepresentation, 0644);
+    [self grantMobileAccessToPath:path];
     return YES;
 }
 

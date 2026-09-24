@@ -3,19 +3,43 @@
 #import "KSBallSettingsStore.h"
 #import "SystemApplicationBridge.h"
 #import <math.h>
+#import <notify.h>
+#import <objc/message.h>
 
 // 悬浮条可见部分：细短条，与屏幕边缘保留 10pt 间隙。
 static const CGFloat KSBallHandleEdgeInset = 10.0;
 static const CGFloat KSBallHandleBarWidth = 4.0;
 static const CGFloat KSBallHandleActiveBarWidth = 6.0;
 static const CGFloat KSBallHandleBarHeight = 36.0;
-// 触摸热区从屏幕边缘开始，比可见条更宽更高，便于按到。
-static const CGFloat KSBallHandleTouchWidth = 34.0;
-static const CGFloat KSBallHandleTouchHeight = 64.0;
-// 热区与屏幕上下边缘的最小距离，允许把悬浮条拖到四个角落。
+// 触摸热区从屏幕边缘开始，远大于可见条，保证手指容易按到。
+static const CGFloat KSBallHandleTouchWidth = 52.0;
+static const CGFloat KSBallHandleTouchHeight = 120.0;
+// 可见条与屏幕上下边缘的最小距离，允许把悬浮条拖到四个角落；热区可以超出屏幕。
 static const CGFloat KSBallHandleVerticalInset = 10.0;
 static const CGFloat KSBallDragActivationDistance = 8.0;
 static const CGFloat KSBallPreviewIconSize = 108.0;
+// 配置变化后扇形菜单的预览停留时间。
+static const NSTimeInterval KSBallMenuPreviewDuration = 1.6;
+static const char * const KSBallLockStateNotification = "com.apple.springboard.lockstate";
+
+// 系统窗口托管按图层做命中测试：透明区域的触摸会直接落到下层应用。
+// 热区需要按不透明处理；纯展示用的图层则不能拦截触摸。
+static void KSBallSetLayerHitTestsAsOpaque(CALayer *layer, BOOL opaque) {
+    SEL selector = NSSelectorFromString(@"setHitTestsAsOpaque:");
+    if ([layer respondsToSelector:selector]) {
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(layer, selector, opaque);
+    }
+}
+
+static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting) {
+    SEL selector = NSSelectorFromString(@"setAllowsHitTesting:");
+    if ([layer respondsToSelector:selector]) {
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(layer, selector, allowsHitTesting);
+    }
+    for (CALayer *sublayer in layer.sublayers) {
+        KSBallSetLayerAllowsHitTesting(sublayer, allowsHitTesting);
+    }
+}
 
 @interface KSBallHUDCanvasView : UIView
 @property (nonatomic, copy) NSArray<UIView *> *interactiveViews;
@@ -52,6 +76,13 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
 @property (nonatomic, strong) UILabel *feedbackLabel;
 @property (nonatomic, strong) UIImpactFeedbackGenerator *hoverFeedbackGenerator;
 @property (nonatomic) BOOL menuVisible;
+@property (nonatomic) BOOL previewingMenu;
+@property (nonatomic) BOOL screenLocked;
+@property (nonatomic) int lockStateToken;
+@property (nonatomic) BOOL hasAppliedSettings;
+@property (nonatomic) CGFloat appliedIconSize;
+@property (nonatomic) CGFloat appliedIconSpacing;
+@property (nonatomic, copy) NSArray<NSString *> *appliedShortcutIdentifiers;
 @property (nonatomic) BOOL dragging;
 @property (nonatomic) BOOL dragMoved;
 @property (nonatomic) CGPoint dragStartLocation;
@@ -69,6 +100,8 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
         _menuItemViews = [NSMutableArray array];
         _menuShortcuts = @[];
         _iconsByBundleIdentifier = [NSMutableDictionary dictionary];
+        _appliedShortcutIdentifiers = @[];
+        _lockStateToken = NOTIFY_TOKEN_INVALID;
     }
     return self;
 }
@@ -110,7 +143,9 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
     [self.view addSubview:self.previewNameLabel];
 
     self.handleView = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, KSBallHandleTouchWidth, KSBallHandleTouchHeight)];
-    self.handleView.backgroundColor = UIColor.clearColor;
+    // 几乎透明的底色加上按不透明命中，整个热区都能接住触摸而不会穿透到下层应用。
+    self.handleView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.012];
+    KSBallSetLayerHitTestsAsOpaque(self.handleView.layer, YES);
     self.handleView.isAccessibilityElement = YES;
     self.handleView.accessibilityLabel = @"KSBall 快捷菜单";
     [self.view addSubview:self.handleView];
@@ -148,12 +183,25 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
 
     self.hoverFeedbackGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
 
+    for (UIView *decorativeView in @[self.backdropView, self.previewImageView, self.previewNameLabel, self.feedbackLabel]) {
+        KSBallSetLayerAllowsHitTesting(decorativeView.layer, NO);
+    }
+
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadFromSettings) name:KSBallSettingsDidChangeNotification object:self.settingsStore];
+    __weak typeof(self) weakSelf = self;
+    notify_register_dispatch(KSBallLockStateNotification, &_lockStateToken, dispatch_get_main_queue(), ^(int token) {
+        [weakSelf refreshLockState];
+    });
+    [self refreshLockState];
     [self reloadFromSettings];
 }
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
+    if (_lockStateToken != NOTIFY_TOKEN_INVALID) {
+        notify_cancel(_lockStateToken);
+    }
 }
 
 - (void)viewDidLayoutSubviews {
@@ -165,8 +213,56 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
     if (!self.isViewLoaded || self.dragging) {
         return;
     }
-    [self dismissMenuAnimated:NO];
+    KSBallSettings *settings = self.settingsStore.settings;
+    NSArray<NSString *> *shortcutIdentifiers = [settings.shortcuts valueForKey:@"bundleIdentifier"];
+    BOOL menuLayoutChanged = self.hasAppliedSettings &&
+        (fabs(settings.iconSize - self.appliedIconSize) > 0.01 ||
+         fabs(settings.iconSpacing - self.appliedIconSpacing) > 0.01 ||
+         ![shortcutIdentifiers isEqualToArray:self.appliedShortcutIdentifiers]);
+    self.hasAppliedSettings = YES;
+    self.appliedIconSize = settings.iconSize;
+    self.appliedIconSpacing = settings.iconSpacing;
+    self.appliedShortcutIdentifiers = shortcutIdentifiers;
+
     [self reloadIcons];
+    // 用户正在滑动选择时不打断当前菜单。
+    if (self.menuVisible && !self.previewingMenu) {
+        return;
+    }
+    [self layoutHandle];
+    if (menuLayoutChanged && !self.screenLocked && settings.shortcuts.count > 0) {
+        [self presentMenuPreview];
+    } else {
+        [self dismissMenuAnimated:NO];
+    }
+}
+
+#pragma mark - 锁屏
+
+- (void)refreshLockState {
+    uint64_t state = 0;
+    if (self.lockStateToken != NOTIFY_TOKEN_INVALID) {
+        notify_get_state(self.lockStateToken, &state);
+    }
+    [self setScreenLocked:state != 0];
+}
+
+- (void)setScreenLocked:(BOOL)screenLocked {
+    _screenLocked = screenLocked;
+    if (!self.isViewLoaded) {
+        return;
+    }
+    if (screenLocked) {
+        // 切换 enabled 会取消进行中的滑动或拖动。
+        for (UIGestureRecognizer *recognizer in self.handleView.gestureRecognizers) {
+            recognizer.enabled = NO;
+            recognizer.enabled = YES;
+        }
+        self.dragging = NO;
+        self.dragMoved = NO;
+        [self dismissMenuAnimated:NO];
+    }
+    self.handleView.hidden = screenLocked;
     [self layoutHandle];
 }
 
@@ -190,11 +286,11 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
 }
 
 - (CGFloat)minimumHandleCenterY {
-    return KSBallHandleVerticalInset + KSBallHandleTouchHeight / 2.0;
+    return KSBallHandleVerticalInset + KSBallHandleBarHeight / 2.0;
 }
 
 - (CGFloat)maximumHandleCenterY {
-    return MAX(CGRectGetHeight(self.view.bounds) - KSBallHandleVerticalInset - KSBallHandleTouchHeight / 2.0, [self minimumHandleCenterY]);
+    return MAX(CGRectGetHeight(self.view.bounds) - KSBallHandleVerticalInset - KSBallHandleBarHeight / 2.0, [self minimumHandleCenterY]);
 }
 
 - (CGFloat)currentHandleCenterY {
@@ -234,9 +330,40 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
 #pragma mark - 扇形菜单
 
 - (BOOL)showMenu {
+    if (self.settingsStore.settings.shortcuts.count == 0) {
+        [self showFeedback:@"长按悬浮条进入设置添加应用"];
+        return NO;
+    }
+    // 预览仍在显示时直接接管，图标已在位，无需再从悬浮条弹出。
+    BOOL animateFromHandle = !self.menuVisible;
+    [self cancelMenuPreviewTimer];
+    self.previewingMenu = NO;
+    return [self presentMenuAnimatedFromHandle:animateFromHandle backdrop:YES];
+}
+
+// 配置变化后在悬浮条旁展示扇形菜单，连续调整时原地更新，停止调整后自动收起。
+- (void)presentMenuPreview {
+    [self cancelMenuPreviewTimer];
+    if (![self presentMenuAnimatedFromHandle:!self.menuVisible backdrop:NO]) {
+        return;
+    }
+    self.previewingMenu = YES;
+    [self performSelector:@selector(endMenuPreview) withObject:nil afterDelay:KSBallMenuPreviewDuration];
+}
+
+- (void)endMenuPreview {
+    if (self.previewingMenu) {
+        [self dismissMenuAnimated:YES];
+    }
+}
+
+- (void)cancelMenuPreviewTimer {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(endMenuPreview) object:nil];
+}
+
+- (BOOL)presentMenuAnimatedFromHandle:(BOOL)animateFromHandle backdrop:(BOOL)backdrop {
     NSArray<KSBallShortcut *> *shortcuts = self.settingsStore.settings.shortcuts;
     if (shortcuts.count == 0) {
-        [self showFeedback:@"长按悬浮条进入设置添加应用"];
         return NO;
     }
 
@@ -247,20 +374,33 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
     self.menuItemSize = settings.iconSize * scale;
     // 命中范围覆盖到相邻图标间隙的一半，滑动时不会出现“空档”。
     self.menuHoverRadius = (settings.iconSize + settings.iconSpacing) * scale / 2.0 + 2.0;
+    [self updateHoveredItemView:nil];
     [self rebuildMenuItemsForShortcuts:[shortcuts subarrayWithRange:NSMakeRange(0, centers.count)]];
-
     self.menuVisible = YES;
-    self.backdropView.hidden = NO;
+
+    if (backdrop) {
+        // 收起动画可能还在进行，直接重新淡入模糊背景。
+        self.backdropView.hidden = NO;
+        [UIView animateWithDuration:0.22 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+            self.backdropView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
+        } completion:nil];
+    }
+    [UIView animateWithDuration:0.16 animations:^{
+        [self layoutBar];
+    }];
+    [self.hoverFeedbackGenerator prepare];
+
+    if (!animateFromHandle) {
+        [self.menuItemViews enumerateObjectsUsingBlock:^(UIView * _Nonnull itemView, NSUInteger index, BOOL * _Nonnull stop) {
+            itemView.center = centers[index].CGPointValue;
+        }];
+        return YES;
+    }
     for (UIView *itemView in self.menuItemViews) {
         itemView.center = anchor;
         itemView.alpha = 0.0;
         itemView.transform = CGAffineTransformMakeScale(0.2, 0.2);
     }
-    [self.hoverFeedbackGenerator prepare];
-    [UIView animateWithDuration:0.22 animations:^{
-        self.backdropView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
-        [self layoutBar];
-    }];
     [UIView animateWithDuration:0.34 delay:0.0 usingSpringWithDamping:0.78 initialSpringVelocity:0.0 options:UIViewAnimationOptionAllowUserInteraction animations:^{
         [self.menuItemViews enumerateObjectsUsingBlock:^(UIView * _Nonnull itemView, NSUInteger index, BOOL * _Nonnull stop) {
             itemView.center = centers[index].CGPointValue;
@@ -272,6 +412,8 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
 }
 
 - (void)dismissMenuAnimated:(BOOL)animated {
+    [self cancelMenuPreviewTimer];
+    self.previewingMenu = NO;
     [self updateHoveredItemView:nil];
     if (!self.menuVisible && self.menuItemViews.count == 0) {
         return;
@@ -338,6 +480,8 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
             iconView.contentMode = UIViewContentModeCenter;
         }
         [itemView addSubview:iconView];
+        // 菜单图标只做展示：选择由悬浮条上的同一次滑动完成，预览期间也不能挡住下层应用的触摸。
+        KSBallSetLayerAllowsHitTesting(itemView.layer, NO);
         itemView.accessibilityLabel = shortcut.displayName;
         [self.view insertSubview:itemView belowSubview:self.previewImageView];
         [self.menuItemViews addObject:itemView];

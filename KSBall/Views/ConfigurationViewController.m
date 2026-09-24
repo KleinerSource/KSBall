@@ -79,10 +79,10 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (section == KSBallConfigurationSectionHUD) {
-        return @"悬浮条位于屏幕边缘内侧。从悬浮条向内滑动展开扇形菜单，滑到图标上会显示名称并震动，松手即启动；在空白处松手则取消。长按不移动回到此设置页，长按后拖动可调整位置。";
+        return @"悬浮条位于屏幕边缘内侧。从悬浮条向内滑动展开扇形菜单，滑到图标上会显示名称并震动，松手即启动；在空白处松手则取消。长按不移动回到此设置页，长按后拖动可调整位置。锁屏界面会自动隐藏悬浮条。";
     }
     if (section == KSBallConfigurationSectionLayout) {
-        return @"扇形菜单围绕悬浮条展开：屏幕中部为半圆，靠近顶部或底部时自动收成四分之一圆。屏幕空间不足时会等比缩小图标。";
+        return @"扇形菜单围绕悬浮条展开：屏幕中部为半圆，靠近顶部或底部时自动收成四分之一圆。调整图标大小、间距或快捷应用时，悬浮条旁会实时预览扇形菜单。屏幕空间不足时会等比缩小图标。";
     }
     if (section == KSBallConfigurationSectionShortcuts) {
         return @"排在前面的入口位于靠近悬浮条的内圈。编辑模式下可删除和排序。";
