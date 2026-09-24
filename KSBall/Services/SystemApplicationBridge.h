@@ -16,6 +16,9 @@ NS_ASSUME_NONNULL_BEGIN
 typedef NSArray<KSBallApplication *> * _Nonnull (^KSBallApplicationProvider)(void);
 typedef BOOL (^KSBallApplicationLauncher)(NSString *bundleIdentifier);
 
+/// 设置页列表统一使用的 29pt 圆形图标，与悬浮菜单中的圆形图标保持一致；icon 为空时返回占位图标。
+FOUNDATION_EXPORT UIImage *KSBallListIconImage(UIImage * _Nullable icon);
+
 @protocol KSBallSystemApplicationBridging <NSObject>
 - (NSArray<KSBallApplication *> *)availableApplications;
 - (nullable UIImage *)iconForBundleIdentifier:(NSString *)bundleIdentifier;

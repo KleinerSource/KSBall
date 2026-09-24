@@ -1,8 +1,8 @@
 #import "KSBallSettings.h"
 #import <math.h>
 
-const NSUInteger KSBallMaximumShortcuts = 16;
-const CGFloat KSBallMinimumIconSize = 40.0;
+const NSUInteger KSBallMaximumShortcuts = 48;
+const CGFloat KSBallMinimumIconSize = 32.0;
 const CGFloat KSBallMaximumIconSize = 64.0;
 const CGFloat KSBallDefaultIconSize = 50.0;
 const CGFloat KSBallMinimumIconSpacing = 4.0;

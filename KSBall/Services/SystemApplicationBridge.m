@@ -16,6 +16,18 @@
 
 @end
 
+UIImage *KSBallListIconImage(UIImage *icon) {
+    if (!icon) {
+        return [UIImage systemImageNamed:@"app.fill"];
+    }
+    CGRect iconRect = CGRectMake(0.0, 0.0, 29.0, 29.0);
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:iconRect.size];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext * _Nonnull context) {
+        [[UIBezierPath bezierPathWithOvalInRect:iconRect] addClip];
+        [icon drawInRect:iconRect];
+    }];
+}
+
 @interface SystemApplicationBridge ()
 @property (nonatomic, copy, nullable) KSBallApplicationProvider applicationProvider;
 @property (nonatomic, copy, nullable) KSBallApplicationLauncher launcher;

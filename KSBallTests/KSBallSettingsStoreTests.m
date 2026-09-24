@@ -33,7 +33,7 @@
     XCTAssertEqualWithAccuracy(store.settings.normalizedVerticalPosition, 0.5, 0.001);
 }
 
-- (void)testAddCapsAtSixteenAndRejectsDuplicates {
+- (void)testAddCapsAtMaximumAndRejectsDuplicates {
     KSBallSettingsStore *store = [[KSBallSettingsStore alloc] initWithUserDefaults:self.defaults key:self.key];
     for (NSUInteger index = 0; index < KSBallMaximumShortcuts; index++) {
         KSBallShortcut *shortcut = [[KSBallShortcut alloc] initWithBundleIdentifier:[NSString stringWithFormat:@"com.example.%lu", (unsigned long)index] displayName:@"App"];
@@ -52,6 +52,23 @@
 
     KSBallSettingsStore *reloadedStore = [[KSBallSettingsStore alloc] initWithUserDefaults:self.defaults key:self.key];
     XCTAssertEqualObjects(reloadedStore.settings.shortcuts.firstObject.bundleIdentifier, @"com.example.second");
+}
+
+- (void)testBatchAddSkipsDuplicatesAndStopsAtMaximum {
+    KSBallSettingsStore *store = [[KSBallSettingsStore alloc] initWithUserDefaults:self.defaults key:self.key];
+    [store addShortcut:[[KSBallShortcut alloc] initWithBundleIdentifier:@"com.example.existing" displayName:@"Existing"]];
+
+    NSMutableArray<KSBallShortcut *> *batch = [NSMutableArray array];
+    [batch addObject:[[KSBallShortcut alloc] initWithBundleIdentifier:@"COM.EXAMPLE.EXISTING" displayName:@"Duplicate"]];
+    for (NSUInteger index = 0; index < KSBallMaximumShortcuts + 5; index++) {
+        [batch addObject:[[KSBallShortcut alloc] initWithBundleIdentifier:[NSString stringWithFormat:@"com.example.batch%lu", (unsigned long)index] displayName:@"App"]];
+    }
+    [batch addObject:[[KSBallShortcut alloc] initWithBundleIdentifier:@"com.example.batch0" displayName:@"Repeat"]];
+
+    XCTAssertEqual([store addShortcuts:batch], KSBallMaximumShortcuts - 1);
+    XCTAssertEqual(store.settings.shortcuts.count, KSBallMaximumShortcuts);
+    XCTAssertEqualObjects(store.settings.shortcuts[1].bundleIdentifier, @"com.example.batch0");
+    XCTAssertEqual([store addShortcuts:@[[[KSBallShortcut alloc] initWithBundleIdentifier:@"com.example.more" displayName:@"More"]]], 0);
 }
 
 - (void)testIconMetricsPersistAndClamp {

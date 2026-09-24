@@ -163,16 +163,15 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     if (indexPath.section == KSBallConfigurationSectionShortcuts && indexPath.row == self.settingsStore.settings.shortcuts.count) {
-        if (self.settingsStore.settings.shortcuts.count >= KSBallMaximumShortcuts) {
-            [self showAlertWithTitle:@"已达上限" message:@"扇形菜单最多配置 16 个应用。"];
+        NSArray<KSBallShortcut *> *existingShortcuts = self.settingsStore.settings.shortcuts;
+        if (existingShortcuts.count >= KSBallMaximumShortcuts) {
+            [self showAlertWithTitle:@"已达上限" message:[NSString stringWithFormat:@"扇形菜单最多配置 %lu 个应用。", (unsigned long)KSBallMaximumShortcuts]];
             return;
         }
-        AppPickerViewController *picker = [[AppPickerViewController alloc] initWithApplicationBridge:self.applicationBridge];
+        AppPickerViewController *picker = [[AppPickerViewController alloc] initWithApplicationBridge:self.applicationBridge existingBundleIdentifiers:[existingShortcuts valueForKey:@"bundleIdentifier"] remainingCapacity:KSBallMaximumShortcuts - existingShortcuts.count];
         __weak typeof(self) weakSelf = self;
-        picker.selectionHandler = ^(KSBallShortcut * _Nonnull shortcut) {
-            if (![weakSelf.settingsStore addShortcut:shortcut]) {
-                [weakSelf showAlertWithTitle:@"无法添加" message:@"该应用已在快捷列表中，或已达到 16 个入口上限。"];
-            }
+        picker.selectionHandler = ^BOOL(KSBallShortcut * _Nonnull shortcut) {
+            return [weakSelf.settingsStore addShortcut:shortcut];
         };
         [self.navigationController pushViewController:picker animated:YES];
     } else if (indexPath.section == KSBallConfigurationSectionHUD && indexPath.row == 1) {
@@ -233,15 +232,9 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     }
     UIImage *icon = [self.applicationBridge iconForBundleIdentifier:bundleIdentifier];
     if (!icon) {
-        return [UIImage systemImageNamed:@"app.fill"];
+        return KSBallListIconImage(nil);
     }
-    // 统一缩放成 29pt 圆形，与悬浮菜单中的圆形图标保持一致。
-    CGRect iconRect = CGRectMake(0.0, 0.0, 29.0, 29.0);
-    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:iconRect.size];
-    UIImage *listIcon = [renderer imageWithActions:^(UIGraphicsImageRendererContext * _Nonnull context) {
-        [[UIBezierPath bezierPathWithOvalInRect:iconRect] addClip];
-        [icon drawInRect:iconRect];
-    }];
+    UIImage *listIcon = KSBallListIconImage(icon);
     self.listIconsByBundleIdentifier[key] = listIcon;
     return listIcon;
 }

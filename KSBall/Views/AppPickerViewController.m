@@ -7,14 +7,20 @@
 @property (nonatomic, copy) NSArray<KSBallApplication *> *applications;
 @property (nonatomic, copy) NSArray<KSBallApplication *> *filteredApplications;
 @property (nonatomic, strong) UISearchController *searchController;
+@property (nonatomic, strong) NSMutableSet<NSString *> *existingBundleIdentifiers;
+@property (nonatomic) NSUInteger remainingCapacity;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, UIImage *> *listIconsByBundleIdentifier;
 @end
 
 @implementation AppPickerViewController
 
-- (instancetype)initWithApplicationBridge:(SystemApplicationBridge *)applicationBridge {
+- (instancetype)initWithApplicationBridge:(SystemApplicationBridge *)applicationBridge existingBundleIdentifiers:(NSArray<NSString *> *)existingBundleIdentifiers remainingCapacity:(NSUInteger)remainingCapacity {
     self = [super initWithStyle:UITableViewStyleInsetGrouped];
     if (self) {
         _applicationBridge = applicationBridge;
+        _existingBundleIdentifiers = [NSMutableSet setWithArray:[existingBundleIdentifiers valueForKey:@"lowercaseString"]];
+        _remainingCapacity = remainingCapacity;
+        _listIconsByBundleIdentifier = [NSMutableDictionary dictionary];
     }
     return self;
 }
@@ -22,7 +28,9 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"添加应用";
-    self.tableView.rowHeight = 58.0;
+    // 编辑模式下每行前面显示系统的绿色 + 号，点一下即添加一个应用。
+    self.tableView.editing = YES;
+    self.tableView.allowsSelectionDuringEditing = YES;
     self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
     self.searchController.searchResultsUpdater = self;
     self.searchController.obscuresBackgroundDuringPresentation = NO;
@@ -34,21 +42,29 @@
 }
 
 - (void)reloadApplications {
-    self.applications = self.applicationBridge.availableApplications;
-    self.filteredApplications = self.applications;
+    // 已在快捷列表中的应用直接隐藏。
+    NSSet<NSString *> *existingBundleIdentifiers = [self.existingBundleIdentifiers copy];
+    self.applications = [self.applicationBridge.availableApplications filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(KSBallApplication *application, NSDictionary<NSString *,id> *bindings) {
+        return ![existingBundleIdentifiers containsObject:application.bundleIdentifier.lowercaseString];
+    }]];
+    [self applySearchQuery:self.searchController.searchBar.text];
     [self.tableView reloadData];
 }
 
 - (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
-    NSString *query = searchController.searchBar.text.lowercaseString;
+    [self applySearchQuery:searchController.searchBar.text];
+    [self.tableView reloadData];
+}
+
+- (void)applySearchQuery:(nullable NSString *)text {
+    NSString *query = text.lowercaseString;
     if (query.length == 0) {
         self.filteredApplications = self.applications;
-    } else {
-        self.filteredApplications = [self.applications filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(KSBallApplication *application, NSDictionary<NSString *,id> *bindings) {
-            return [application.displayName.lowercaseString containsString:query] || [application.bundleIdentifier.lowercaseString containsString:query];
-        }]];
+        return;
     }
-    [self.tableView reloadData];
+    self.filteredApplications = [self.applications filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(KSBallApplication *application, NSDictionary<NSString *,id> *bindings) {
+        return [application.displayName.lowercaseString containsString:query] || [application.bundleIdentifier.lowercaseString containsString:query];
+    }]];
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
@@ -60,33 +76,95 @@
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return @"已安装的用户应用";
+    return [NSString stringWithFormat:@"已安装的用户应用（还可添加 %lu 个）", (unsigned long)self.remainingCapacity];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    return @"默认隐藏系统内部应用。未列出的应用可通过“手动添加”输入 Bundle ID。";
+    return @"点应用前的 + 号即可加入快捷列表，可连续添加多个。已添加的应用不会出现在这里；默认隐藏系统内部应用，未列出的应用可通过“手动添加”输入 Bundle ID。";
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ApplicationCell"];
     if (!cell) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ApplicationCell"];
-        cell.accessoryType = UITableViewCellAccessoryNone;
     }
     KSBallApplication *application = self.filteredApplications[indexPath.row];
     cell.textLabel.text = application.displayName;
     cell.detailTextLabel.text = application.bundleIdentifier;
-    cell.imageView.image = application.icon ?: [UIImage systemImageNamed:@"app.fill"];
+    cell.imageView.image = [self listIconForApplication:application];
     return cell;
 }
 
+- (UITableViewCellEditingStyle)tableView:(UITableView *)tableView editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return UITableViewCellEditingStyleInsert;
+}
+
+- (BOOL)tableView:(UITableView *)tableView shouldIndentWhileEditingRowAtIndexPath:(NSIndexPath *)indexPath {
+    return YES;
+}
+
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (editingStyle == UITableViewCellEditingStyleInsert) {
+        [self addApplicationAtIndexPath:indexPath];
+    }
+}
+
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    [self addApplicationAtIndexPath:indexPath];
+}
+
+- (void)addApplicationAtIndexPath:(NSIndexPath *)indexPath {
+    if (indexPath.row >= (NSInteger)self.filteredApplications.count) {
+        return;
+    }
     KSBallApplication *application = self.filteredApplications[indexPath.row];
     KSBallShortcut *shortcut = [[KSBallShortcut alloc] initWithBundleIdentifier:application.bundleIdentifier displayName:application.displayName];
-    if (self.selectionHandler) {
-        self.selectionHandler(shortcut);
+    if (![self addShortcut:shortcut]) {
+        return;
     }
-    [self.navigationController popViewControllerAnimated:YES];
+    NSMutableArray<KSBallApplication *> *applications = [self.applications mutableCopy];
+    [applications removeObjectIdenticalTo:application];
+    self.applications = applications;
+    NSMutableArray<KSBallApplication *> *filteredApplications = [self.filteredApplications mutableCopy];
+    [filteredApplications removeObjectAtIndex:indexPath.row];
+    self.filteredApplications = filteredApplications;
+    [self.tableView performBatchUpdates:^{
+        [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+    } completion:^(BOOL finished) {
+        // 刷新分组标题中的剩余数量。
+        [UIView performWithoutAnimation:^{
+            [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:0] withRowAnimation:UITableViewRowAnimationNone];
+        }];
+    }];
+}
+
+// 逐个添加：达到上限时立即提示，不会出现选了一批却只加进去一部分的情况。
+- (BOOL)addShortcut:(KSBallShortcut *)shortcut {
+    if (self.remainingCapacity == 0) {
+        [self showAlertWithTitle:@"已达上限" message:[NSString stringWithFormat:@"扇形菜单最多配置 %lu 个应用。", (unsigned long)KSBallMaximumShortcuts]];
+        return NO;
+    }
+    if (!self.selectionHandler || !self.selectionHandler(shortcut)) {
+        [self showAlertWithTitle:@"无法添加" message:@"该应用已在快捷列表中，或已达到入口上限。"];
+        return NO;
+    }
+    self.remainingCapacity -= 1;
+    [self.existingBundleIdentifiers addObject:shortcut.bundleIdentifier.lowercaseString];
+    return YES;
+}
+
+- (UIImage *)listIconForApplication:(KSBallApplication *)application {
+    NSString *key = application.bundleIdentifier.lowercaseString;
+    UIImage *cachedIcon = self.listIconsByBundleIdentifier[key];
+    if (cachedIcon) {
+        return cachedIcon;
+    }
+    UIImage *listIcon = KSBallListIconImage(application.icon);
+    if (application.icon) {
+        self.listIconsByBundleIdentifier[key] = listIcon;
+    }
+    return listIcon;
 }
 
 - (void)showManualEntry {
@@ -109,10 +187,9 @@
             return;
         }
         KSBallShortcut *shortcut = [[KSBallShortcut alloc] initWithBundleIdentifier:bundleIdentifier displayName:displayName.length > 0 ? displayName : bundleIdentifier];
-        if (weakSelf.selectionHandler) {
-            weakSelf.selectionHandler(shortcut);
+        if ([weakSelf addShortcut:shortcut]) {
+            [weakSelf reloadApplications];
         }
-        [weakSelf.navigationController popViewControllerAnimated:YES];
     }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
@@ -126,7 +203,11 @@
 }
 
 - (void)showInvalidBundleIdentifierAlert {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Bundle ID 无效" message:@"请输入类似 com.example.app 的 Bundle ID。" preferredStyle:UIAlertControllerStyleAlert];
+    [self showAlertWithTitle:@"Bundle ID 无效" message:@"请输入类似 com.example.app 的 Bundle ID。"];
+}
+
+- (void)showAlertWithTitle:(NSString *)title message:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }

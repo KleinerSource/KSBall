@@ -7,9 +7,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface AppPickerViewController : UITableViewController
 
-@property (nonatomic, copy, nullable) void (^selectionHandler)(KSBallShortcut *shortcut);
+/// 每点一次 + 号就回调一次；返回 YES 表示已加入快捷列表，该应用随即从列表中移除。
+@property (nonatomic, copy, nullable) BOOL (^selectionHandler)(KSBallShortcut *shortcut);
 
-- (instancetype)initWithApplicationBridge:(SystemApplicationBridge *)applicationBridge;
+/// existingBundleIdentifiers 中的应用不会出现在列表里；最多还能添加 remainingCapacity 个。
+- (instancetype)initWithApplicationBridge:(SystemApplicationBridge *)applicationBridge
+                existingBundleIdentifiers:(NSArray<NSString *> *)existingBundleIdentifiers
+                        remainingCapacity:(NSUInteger)remainingCapacity;
 
 @end
 

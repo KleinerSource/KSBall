@@ -108,19 +108,35 @@ static const char * const KSBallSettingsDarwinNotification = "com.kleinersource.
 }
 
 - (BOOL)addShortcut:(KSBallShortcut *)shortcut {
-    if (shortcut.bundleIdentifier.length == 0 || self.settings.shortcuts.count >= KSBallMaximumShortcuts) {
-        return NO;
-    }
+    return [self addShortcuts:@[shortcut]] == 1;
+}
 
+- (NSUInteger)addShortcuts:(NSArray<KSBallShortcut *> *)shortcuts {
+    // 先在当前设置上筛出可添加的项，再一次性写入，只触发一次同步和一次悬浮条预览。
+    [self reload];
+    NSMutableSet<NSString *> *bundleIdentifiers = [NSMutableSet set];
     for (KSBallShortcut *existingShortcut in self.settings.shortcuts) {
-        if ([existingShortcut.bundleIdentifier caseInsensitiveCompare:shortcut.bundleIdentifier] == NSOrderedSame) {
-            return NO;
+        [bundleIdentifiers addObject:existingShortcut.bundleIdentifier.lowercaseString];
+    }
+    NSMutableArray<KSBallShortcut *> *acceptedShortcuts = [NSMutableArray array];
+    for (KSBallShortcut *shortcut in shortcuts) {
+        NSString *identifier = shortcut.bundleIdentifier.lowercaseString;
+        if (identifier.length == 0 || [bundleIdentifiers containsObject:identifier]) {
+            continue;
         }
+        if (self.settings.shortcuts.count + acceptedShortcuts.count >= KSBallMaximumShortcuts) {
+            break;
+        }
+        [bundleIdentifiers addObject:identifier];
+        [acceptedShortcuts addObject:shortcut];
+    }
+    if (acceptedShortcuts.count == 0) {
+        return 0;
     }
     [self mutateSettings:^(KSBallSettings *settings) {
-        [settings.shortcuts addObject:shortcut];
+        [settings.shortcuts addObjectsFromArray:acceptedShortcuts];
     }];
-    return YES;
+    return acceptedShortcuts.count;
 }
 
 - (void)removeShortcutAtIndex:(NSUInteger)index {

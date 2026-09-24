@@ -25,11 +25,11 @@
 
 - (void)testLayoutsStayInsideSafeBoundsWithConfiguredSpacing {
     CGRect safeBounds = [self safeBounds];
-    NSArray<NSArray<NSNumber *> *> *metrics = @[@[@40, @4], @[@50, @12], @[@64, @16]];
+    NSArray<NSArray<NSNumber *> *> *metrics = @[@[@32, @4], @[@40, @4], @[@50, @12], @[@64, @16]];
     for (NSArray<NSNumber *> *metric in metrics) {
         CGFloat itemSize = metric[0].doubleValue;
         CGFloat spacing = metric[1].doubleValue;
-        for (NSNumber *countValue in @[@1, @3, @8, @16]) {
+        for (NSNumber *countValue in @[@1, @3, @8, @16, @48]) {
             for (NSNumber *edgeValue in @[@(KSBallEdgeLeft), @(KSBallEdgeRight)]) {
                 for (NSNumber *anchorYValue in @[@20.0, @120.0, @405.0, @680.0, @800.0]) {
                     NSUInteger count = countValue.unsignedIntegerValue;
@@ -109,6 +109,39 @@
         XCTAssertGreaterThan([self averageYOfCenters:[self centersForCount:8 anchorY:120.0 edge:edge itemSize:50.0 spacing:12.0]], 120.0);
         XCTAssertLessThan([self averageYOfCenters:[self centersForCount:8 anchorY:680.0 edge:edge itemSize:50.0 spacing:12.0]], 680.0);
     }
+}
+
+- (void)testRingCapacitiesFollowAvailableArc {
+    CGRect safeBounds = [self safeBounds];
+    // 右下角为四分之一圆：内圈 3 个，外圈按弧长逐圈增多（40pt 图标、8pt 间距时为 3、4、6）。
+    CGFloat scale = 0.0;
+    NSArray<NSValue *> *cornerCenters = [self centersForCount:15 anchorY:800.0 edge:KSBallEdgeRight itemSize:40.0 spacing:8.0 scale:&scale];
+    XCTAssertEqualWithAccuracy(scale, 1.0, 0.001);
+    CGPoint cornerCenter = CGPointMake(CGRectGetMaxX(safeBounds) - 20.0, CGRectGetMaxY(safeBounds) - 20.0);
+    XCTAssertEqualObjects([self ringSizesOfCenters:cornerCenters aroundCenter:cornerCenter], (@[@3, @4, @6, @2]));
+
+    // 屏幕中部为半圆，同样的半径下每圈容量约为四分之一圆的两倍。
+    CGFloat middle = CGRectGetMidY(safeBounds);
+    NSArray<NSValue *> *middleCenters = [self centersForCount:14 anchorY:middle edge:KSBallEdgeLeft itemSize:40.0 spacing:8.0 scale:&scale];
+    XCTAssertEqualWithAccuracy(scale, 1.0, 0.001);
+    CGPoint middleCenter = CGPointMake(CGRectGetMinX(safeBounds) + 20.0, middle);
+    XCTAssertEqualObjects([self ringSizesOfCenters:middleCenters aroundCenter:middleCenter], (@[@5, @8, @1]));
+}
+
+- (NSArray<NSNumber *> *)ringSizesOfCenters:(NSArray<NSValue *> *)centers aroundCenter:(CGPoint)center {
+    NSMutableArray<NSNumber *> *sizes = [NSMutableArray array];
+    CGFloat currentRadius = -1.0;
+    for (NSValue *value in centers) {
+        CGPoint point = value.CGPointValue;
+        CGFloat radius = hypot(point.x - center.x, point.y - center.y);
+        if (fabs(radius - currentRadius) > 0.5) {
+            [sizes addObject:@1];
+            currentRadius = radius;
+        } else {
+            sizes[sizes.count - 1] = @(sizes.lastObject.unsignedIntegerValue + 1);
+        }
+    }
+    return sizes;
 }
 
 - (CGFloat)averageYOfCenters:(NSArray<NSValue *> *)centers {
