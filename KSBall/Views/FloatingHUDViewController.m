@@ -77,12 +77,12 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 @property (nonatomic, strong) UIImpactFeedbackGenerator *hoverFeedbackGenerator;
 @property (nonatomic) BOOL menuVisible;
 @property (nonatomic) BOOL previewingMenu;
+@property (nonatomic) BOOL backdropRequested;
 @property (nonatomic) BOOL screenLocked;
 @property (nonatomic) int lockStateToken;
 @property (nonatomic) BOOL hasAppliedSettings;
-@property (nonatomic) CGFloat appliedIconSize;
-@property (nonatomic) CGFloat appliedIconSpacing;
-@property (nonatomic, copy) NSArray<NSString *> *appliedShortcutIdentifiers;
+@property (nonatomic, copy) NSString *appliedMenuLayoutSignature;
+@property (nonatomic, copy) NSString *appliedBackdropSignature;
 @property (nonatomic) BOOL dragging;
 @property (nonatomic) BOOL dragMoved;
 @property (nonatomic) CGPoint dragStartLocation;
@@ -100,7 +100,8 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         _menuItemViews = [NSMutableArray array];
         _menuShortcuts = @[];
         _iconsByBundleIdentifier = [NSMutableDictionary dictionary];
-        _appliedShortcutIdentifiers = @[];
+        _appliedMenuLayoutSignature = @"";
+        _appliedBackdropSignature = @"";
         _lockStateToken = NOTIFY_TOKEN_INVALID;
     }
     return self;
@@ -214,15 +215,14 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         return;
     }
     KSBallSettings *settings = self.settingsStore.settings;
-    NSArray<NSString *> *shortcutIdentifiers = [settings.shortcuts valueForKey:@"bundleIdentifier"];
-    BOOL menuLayoutChanged = self.hasAppliedSettings &&
-        (fabs(settings.iconSize - self.appliedIconSize) > 0.01 ||
-         fabs(settings.iconSpacing - self.appliedIconSpacing) > 0.01 ||
-         ![shortcutIdentifiers isEqualToArray:self.appliedShortcutIdentifiers]);
+    NSString *shortcutIdentifiers = [[settings.shortcuts valueForKey:@"bundleIdentifier"] componentsJoinedByString:@","];
+    NSString *menuLayoutSignature = [NSString stringWithFormat:@"%.2f|%.2f|%.2f|%@", settings.iconSize, settings.iconSpacing, settings.ringSpacing, shortcutIdentifiers];
+    NSString *backdropSignature = [NSString stringWithFormat:@"%ld|%.2f", (long)settings.backdropStyle, settings.backdropOpacity];
+    BOOL menuLayoutChanged = self.hasAppliedSettings && ![menuLayoutSignature isEqualToString:self.appliedMenuLayoutSignature];
+    BOOL backdropChanged = self.hasAppliedSettings && ![backdropSignature isEqualToString:self.appliedBackdropSignature];
     self.hasAppliedSettings = YES;
-    self.appliedIconSize = settings.iconSize;
-    self.appliedIconSpacing = settings.iconSpacing;
-    self.appliedShortcutIdentifiers = shortcutIdentifiers;
+    self.appliedMenuLayoutSignature = menuLayoutSignature;
+    self.appliedBackdropSignature = backdropSignature;
 
     [self reloadIcons];
     // 用户正在滑动选择时不打断当前菜单。
@@ -230,8 +230,9 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         return;
     }
     [self layoutHandle];
-    if (menuLayoutChanged && !self.screenLocked && settings.shortcuts.count > 0) {
-        [self presentMenuPreview];
+    if ((menuLayoutChanged || backdropChanged) && !self.screenLocked && settings.shortcuts.count > 0) {
+        // 调整毛玻璃时连同背景一起预览；其余情况不遮挡设置页。
+        [self presentMenuPreviewWithBackdrop:backdropChanged];
     } else {
         [self dismissMenuAnimated:NO];
     }
@@ -315,7 +316,25 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     CGFloat barX = [self currentEdge] == KSBallEdgeLeft ? KSBallHandleEdgeInset : KSBallHandleTouchWidth - KSBallHandleEdgeInset - barWidth;
     self.barView.frame = CGRectMake(barX, (KSBallHandleTouchHeight - KSBallHandleBarHeight) / 2.0, barWidth, KSBallHandleBarHeight);
     self.barView.layer.cornerRadius = barWidth / 2.0;
-    self.barView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:active ? 0.98 : 0.8];
+    switch (self.settingsStore.settings.handleStyle) {
+        case KSBallHandleStyleDark:
+            self.barView.hidden = NO;
+            self.barView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:active ? 0.9 : 0.7];
+            self.barView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.25].CGColor;
+            break;
+        case KSBallHandleStyleHidden:
+            // 隐藏时热区仍然有效；拖动调整位置期间临时显示，便于看清落点。
+            self.barView.hidden = !self.dragging;
+            self.barView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.9];
+            self.barView.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.18].CGColor;
+            break;
+        case KSBallHandleStyleLight:
+        default:
+            self.barView.hidden = NO;
+            self.barView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:active ? 0.98 : 0.8];
+            self.barView.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.18].CGColor;
+            break;
+    }
 }
 
 - (CGPoint)barCenter {
@@ -342,10 +361,13 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 }
 
 // 配置变化后在悬浮条旁展示扇形菜单，连续调整时原地更新，停止调整后自动收起。
-- (void)presentMenuPreview {
+- (void)presentMenuPreviewWithBackdrop:(BOOL)backdrop {
     [self cancelMenuPreviewTimer];
-    if (![self presentMenuAnimatedFromHandle:!self.menuVisible backdrop:NO]) {
+    if (![self presentMenuAnimatedFromHandle:!self.menuVisible backdrop:backdrop]) {
         return;
+    }
+    if (!backdrop) {
+        [self hideBackdropAnimated:YES];
     }
     self.previewingMenu = YES;
     [self performSelector:@selector(endMenuPreview) withObject:nil afterDelay:KSBallMenuPreviewDuration];
@@ -370,20 +392,16 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     KSBallSettings *settings = self.settingsStore.settings;
     CGFloat scale = 1.0;
     CGPoint anchor = [self barCenter];
-    NSArray<NSValue *> *centers = [KSBallFanLayout centersForItemCount:shortcuts.count anchorCenter:anchor safeBounds:[self menuSafeBounds] edge:[self currentEdge] itemSize:settings.iconSize spacing:settings.iconSpacing scale:&scale];
+    NSArray<NSValue *> *centers = [KSBallFanLayout centersForItemCount:shortcuts.count anchorCenter:anchor safeBounds:[self menuSafeBounds] edge:[self currentEdge] itemSize:settings.iconSize itemSpacing:settings.iconSpacing ringSpacing:settings.ringSpacing scale:&scale];
     self.menuItemSize = settings.iconSize * scale;
-    // 命中范围覆盖到相邻图标间隙的一半，滑动时不会出现“空档”。
-    self.menuHoverRadius = (settings.iconSize + settings.iconSpacing) * scale / 2.0 + 2.0;
+    // 命中范围覆盖到最近两个图标间隙的一半，滑动时不会出现“空档”。
+    self.menuHoverRadius = (settings.iconSize + MIN(settings.iconSpacing, settings.ringSpacing)) * scale / 2.0 + 2.0;
     [self updateHoveredItemView:nil];
     [self rebuildMenuItemsForShortcuts:[shortcuts subarrayWithRange:NSMakeRange(0, centers.count)]];
     self.menuVisible = YES;
 
     if (backdrop) {
-        // 收起动画可能还在进行，直接重新淡入模糊背景。
-        self.backdropView.hidden = NO;
-        [UIView animateWithDuration:0.22 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
-            self.backdropView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
-        } completion:nil];
+        [self showBackdrop];
     }
     [UIView animateWithDuration:0.16 animations:^{
         [self layoutBar];
@@ -411,6 +429,52 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     return YES;
 }
 
+#pragma mark - 毛玻璃背景
+
+- (void)showBackdrop {
+    KSBallSettings *settings = self.settingsStore.settings;
+    BOOL lightBackdrop = settings.backdropStyle == KSBallBackdropStyleLight;
+    // 亮色背景上用深色文字，其余情况保持白字加阴影。
+    self.previewNameLabel.textColor = lightBackdrop ? UIColor.blackColor : UIColor.whiteColor;
+    self.previewNameLabel.layer.shadowOpacity = lightBackdrop ? 0.0 : 0.5;
+    if (settings.backdropStyle == KSBallBackdropStyleNone) {
+        [self hideBackdropAnimated:YES];
+        return;
+    }
+    self.backdropRequested = YES;
+    UIBlurEffect *effect = [UIBlurEffect effectWithStyle:lightBackdrop ? UIBlurEffectStyleSystemThinMaterialLight : UIBlurEffectStyleSystemThinMaterialDark];
+    // 收起动画可能还在进行，直接重新淡入。透明度通过视图 alpha 控制毛玻璃的浓淡。
+    self.backdropView.hidden = NO;
+    [UIView animateWithDuration:0.22 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        self.backdropView.effect = effect;
+        self.backdropView.alpha = settings.backdropOpacity;
+    } completion:nil];
+}
+
+- (void)hideBackdropAnimated:(BOOL)animated {
+    self.backdropRequested = NO;
+    if (self.backdropView.hidden) {
+        return;
+    }
+    void (^changes)(void) = ^{
+        self.backdropView.effect = nil;
+    };
+    void (^completion)(BOOL) = ^(BOOL finished) {
+        // 动画期间可能已重新请求背景，此时保持显示。
+        if (!self.backdropRequested) {
+            self.backdropView.hidden = YES;
+        }
+    };
+    if (animated) {
+        [UIView animateWithDuration:0.18 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:changes completion:completion];
+    } else {
+        changes();
+        completion(YES);
+    }
+}
+
+#pragma mark - 收起菜单
+
 - (void)dismissMenuAnimated:(BOOL)animated {
     [self cancelMenuPreviewTimer];
     self.previewingMenu = NO;
@@ -429,18 +493,14 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
             itemView.center = anchor;
             itemView.transform = CGAffineTransformMakeScale(0.2, 0.2);
         }
-        self.backdropView.effect = nil;
         [self layoutBar];
     };
     void (^completion)(BOOL) = ^(BOOL finished) {
         for (UIView *itemView in itemViews) {
             [itemView removeFromSuperview];
         }
-        // 动画期间菜单可能已被重新打开，此时保留模糊背景。
-        if (!self.menuVisible) {
-            self.backdropView.hidden = YES;
-        }
     };
+    [self hideBackdropAnimated:animated];
     if (animated) {
         [UIView animateWithDuration:0.18 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:changes completion:completion];
     } else {

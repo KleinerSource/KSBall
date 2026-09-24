@@ -27,7 +27,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"添加应用";
+    [self updateTitle];
     // 编辑模式下每行前面显示系统的绿色 + 号，点一下即添加一个应用。
     self.tableView.editing = YES;
     self.tableView.allowsSelectionDuringEditing = YES;
@@ -76,7 +76,7 @@
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return [NSString stringWithFormat:@"已安装的用户应用（还可添加 %lu 个）", (unsigned long)self.remainingCapacity];
+    return @"已安装的用户应用";
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
@@ -115,7 +115,7 @@
 }
 
 - (void)addApplicationAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.row >= (NSInteger)self.filteredApplications.count) {
+    if (indexPath.section != 0 || indexPath.row >= (NSInteger)self.filteredApplications.count) {
         return;
     }
     KSBallApplication *application = self.filteredApplications[indexPath.row];
@@ -123,20 +123,20 @@
     if (![self addShortcut:shortcut]) {
         return;
     }
+    // 先同步更新数据源再删除这一行，不做批量更新和分组重载：
+    // 连续快速点击时多个更新交叠会让行数校验失败并直接崩溃。
     NSMutableArray<KSBallApplication *> *applications = [self.applications mutableCopy];
     [applications removeObjectIdenticalTo:application];
     self.applications = applications;
     NSMutableArray<KSBallApplication *> *filteredApplications = [self.filteredApplications mutableCopy];
     [filteredApplications removeObjectAtIndex:indexPath.row];
     self.filteredApplications = filteredApplications;
-    [self.tableView performBatchUpdates:^{
-        [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
-    } completion:^(BOOL finished) {
-        // 刷新分组标题中的剩余数量。
-        [UIView performWithoutAnimation:^{
-            [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:0] withRowAnimation:UITableViewRowAnimationNone];
-        }];
-    }];
+    [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+    [self updateTitle];
+}
+
+- (void)updateTitle {
+    self.title = [NSString stringWithFormat:@"添加应用（剩余 %lu）", (unsigned long)self.remainingCapacity];
 }
 
 // 逐个添加：达到上限时立即提示，不会出现选了一批却只加进去一部分的情况。
@@ -189,6 +189,7 @@
         KSBallShortcut *shortcut = [[KSBallShortcut alloc] initWithBundleIdentifier:bundleIdentifier displayName:displayName.length > 0 ? displayName : bundleIdentifier];
         if ([weakSelf addShortcut:shortcut]) {
             [weakSelf reloadApplications];
+            [weakSelf updateTitle];
         }
     }]];
     [self presentViewController:alert animated:YES completion:nil];
