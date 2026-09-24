@@ -16,8 +16,6 @@ typedef struct {
     uint32_t hi;
 } KSBallAbsoluteTime;
 
-NSNotificationName const KSBallHUDOutsideTouchNotification = @"KSBallHUDOutsideTouchNotification";
-
 typedef KSBallIOHIDEventRef (*KSBallCreateDigitizerEventFunction)(CFAllocatorRef, KSBallAbsoluteTime, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, double, double, double, double, double, Boolean, Boolean, uint32_t);
 typedef KSBallIOHIDEventRef (*KSBallCreateFingerEventFunction)(CFAllocatorRef, KSBallAbsoluteTime, uint32_t, uint32_t, uint32_t, double, double, double, double, double, double, double, double, double, double, Boolean, Boolean, uint32_t);
 typedef void (*KSBallAppendHIDEventFunction)(KSBallIOHIDEventRef, KSBallIOHIDEventRef);
@@ -188,11 +186,7 @@ static void KSBallReceiveTouch(NSInteger identifier, CGPoint location, UITouchPh
     BOOL living = touch && [KSBallLivingTouches indexOfObjectIdenticalTo:touch] != NSNotFound;
     if (!living) {
         // 只在按下时建立新触摸；从 HUD 外滑入的手指不应在悬浮条上凭空产生点击。
-        if (phase != UITouchPhaseBegan) {
-            return;
-        }
-        if (!view) {
-            [[NSNotificationCenter defaultCenter] postNotificationName:KSBallHUDOutsideTouchNotification object:nil];
+        if (phase != UITouchPhaseBegan || !view) {
             return;
         }
         touch = [[UITouch alloc] initKSBallAtPoint:location inWindow:window onView:view];

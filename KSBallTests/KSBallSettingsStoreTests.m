@@ -54,4 +54,18 @@
     XCTAssertEqualObjects(reloadedStore.settings.shortcuts.firstObject.bundleIdentifier, @"com.example.second");
 }
 
+- (void)testIconMetricsPersistAndClamp {
+    KSBallSettingsStore *store = [[KSBallSettingsStore alloc] initWithUserDefaults:self.defaults key:self.key];
+    XCTAssertEqualWithAccuracy(store.settings.iconSize, KSBallDefaultIconSize, 0.001);
+    XCTAssertEqualWithAccuracy(store.settings.iconSpacing, KSBallDefaultIconSpacing, 0.001);
+
+    [store mutateSettings:^(KSBallSettings *settings) {
+        settings.iconSize = 58.0;
+        settings.iconSpacing = 1000.0;
+    }];
+    KSBallSettingsStore *reloadedStore = [[KSBallSettingsStore alloc] initWithUserDefaults:self.defaults key:self.key];
+    XCTAssertEqualWithAccuracy(reloadedStore.settings.iconSize, 58.0, 0.001);
+    XCTAssertEqualWithAccuracy(reloadedStore.settings.iconSpacing, KSBallMaximumIconSpacing, 0.001);
+}
+
 @end

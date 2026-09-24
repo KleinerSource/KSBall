@@ -1,22 +1,21 @@
 #import "FloatingHUDViewController.h"
-#import "HUDTouchEventBridge.h"
 #import "KSBallFanLayout.h"
 #import "KSBallSettingsStore.h"
 #import "SystemApplicationBridge.h"
 #import <math.h>
 
-// 悬浮条可见部分与触摸热区。热区比可见条宽得多，保证贴边时依然容易按到。
-static const CGFloat KSBallHandleBarWidth = 6.0;
-static const CGFloat KSBallHandleActiveBarWidth = 9.0;
-static const CGFloat KSBallHandleBarHeight = 72.0;
-static const CGFloat KSBallHandleTouchWidth = 30.0;
-static const CGFloat KSBallHandleTouchHeight = 112.0;
-static const CGFloat KSBallHandleVerticalMargin = 44.0;
-// 扇形圆心略微内收，保证外圈和偏上/偏下布局都不会被屏幕边缘挤压。
-static const CGFloat KSBallFanAnchorInset = 20.0;
-static const CGFloat KSBallMenuButtonSize = 50.0;
-static const CGFloat KSBallMenuHoverRadius = 36.0;
+// 悬浮条可见部分：细短条，与屏幕边缘保留 10pt 间隙。
+static const CGFloat KSBallHandleEdgeInset = 10.0;
+static const CGFloat KSBallHandleBarWidth = 4.0;
+static const CGFloat KSBallHandleActiveBarWidth = 6.0;
+static const CGFloat KSBallHandleBarHeight = 36.0;
+// 触摸热区从屏幕边缘开始，比可见条更宽更高，便于按到。
+static const CGFloat KSBallHandleTouchWidth = 34.0;
+static const CGFloat KSBallHandleTouchHeight = 64.0;
+// 热区与屏幕上下边缘的最小距离，允许把悬浮条拖到四个角落。
+static const CGFloat KSBallHandleVerticalInset = 10.0;
 static const CGFloat KSBallDragActivationDistance = 8.0;
+static const CGFloat KSBallPreviewIconSize = 108.0;
 
 @interface KSBallHUDCanvasView : UIView
 @property (nonatomic, copy) NSArray<UIView *> *interactiveViews;
@@ -41,12 +40,17 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
 @property (nonatomic, strong) UIView *handleView;
 @property (nonatomic, strong) UIView *barView;
 @property (nonatomic, strong) UIPanGestureRecognizer *panRecognizer;
-@property (nonatomic, strong) NSMutableArray<UIButton *> *menuButtons;
-@property (nonatomic, strong) NSMutableDictionary<NSString *, KSBallShortcut *> *shortcutsByIdentifier;
-@property (nonatomic, strong) NSMutableSet<NSString *> *unavailableIdentifiers;
-@property (nonatomic, strong, nullable) UIButton *hoveredButton;
-@property (nonatomic, strong) UILabel *nameLabel;
+@property (nonatomic, strong) UIVisualEffectView *backdropView;
+@property (nonatomic, strong) NSMutableArray<UIView *> *menuItemViews;
+@property (nonatomic, copy) NSArray<KSBallShortcut *> *menuShortcuts;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, UIImage *> *iconsByBundleIdentifier;
+@property (nonatomic, strong, nullable) UIView *hoveredItemView;
+@property (nonatomic) CGFloat menuItemSize;
+@property (nonatomic) CGFloat menuHoverRadius;
+@property (nonatomic, strong) UIImageView *previewImageView;
+@property (nonatomic, strong) UILabel *previewNameLabel;
 @property (nonatomic, strong) UILabel *feedbackLabel;
+@property (nonatomic, strong) UIImpactFeedbackGenerator *hoverFeedbackGenerator;
 @property (nonatomic) BOOL menuVisible;
 @property (nonatomic) BOOL dragging;
 @property (nonatomic) BOOL dragMoved;
@@ -62,9 +66,9 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
     if (self) {
         _settingsStore = settingsStore;
         _applicationBridge = applicationBridge;
-        _menuButtons = [NSMutableArray array];
-        _shortcutsByIdentifier = [NSMutableDictionary dictionary];
-        _unavailableIdentifiers = [NSMutableSet set];
+        _menuItemViews = [NSMutableArray array];
+        _menuShortcuts = @[];
+        _iconsByBundleIdentifier = [NSMutableDictionary dictionary];
     }
     return self;
 }
@@ -78,6 +82,33 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
 - (void)viewDidLoad {
     [super viewDidLoad];
 
+    self.backdropView = [[UIVisualEffectView alloc] initWithEffect:nil];
+    self.backdropView.userInteractionEnabled = NO;
+    self.backdropView.hidden = YES;
+    self.backdropView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.backdropView.frame = self.view.bounds;
+    [self.view addSubview:self.backdropView];
+
+    self.previewImageView = [[UIImageView alloc] initWithFrame:CGRectMake(0.0, 0.0, KSBallPreviewIconSize, KSBallPreviewIconSize)];
+    self.previewImageView.contentMode = UIViewContentModeScaleAspectFit;
+    self.previewImageView.layer.shadowColor = UIColor.blackColor.CGColor;
+    self.previewImageView.layer.shadowOpacity = 0.35;
+    self.previewImageView.layer.shadowRadius = 16.0;
+    self.previewImageView.layer.shadowOffset = CGSizeMake(0.0, 6.0);
+    self.previewImageView.alpha = 0.0;
+    [self.view addSubview:self.previewImageView];
+
+    self.previewNameLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.previewNameLabel.textColor = UIColor.whiteColor;
+    self.previewNameLabel.textAlignment = NSTextAlignmentCenter;
+    self.previewNameLabel.font = [UIFont systemFontOfSize:17.0 weight:UIFontWeightSemibold];
+    self.previewNameLabel.layer.shadowColor = UIColor.blackColor.CGColor;
+    self.previewNameLabel.layer.shadowOpacity = 0.5;
+    self.previewNameLabel.layer.shadowRadius = 4.0;
+    self.previewNameLabel.layer.shadowOffset = CGSizeZero;
+    self.previewNameLabel.alpha = 0.0;
+    [self.view addSubview:self.previewNameLabel];
+
     self.handleView = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, KSBallHandleTouchWidth, KSBallHandleTouchHeight)];
     self.handleView.backgroundColor = UIColor.clearColor;
     self.handleView.isAccessibilityElement = YES;
@@ -86,18 +117,15 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
 
     self.barView = [UIView new];
     self.barView.userInteractionEnabled = NO;
-    self.barView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.82];
     self.barView.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.18].CGColor;
     self.barView.layer.borderWidth = 0.5;
     self.barView.layer.shadowColor = UIColor.blackColor.CGColor;
     self.barView.layer.shadowOpacity = 0.3;
-    self.barView.layer.shadowRadius = 4.0;
+    self.barView.layer.shadowRadius = 3.0;
     self.barView.layer.shadowOffset = CGSizeZero;
     [self.handleView addSubview:self.barView];
 
-    UITapGestureRecognizer *tapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
-    [self.handleView addGestureRecognizer:tapRecognizer];
-
+    // 扇形菜单只能由滑动展开；点按悬浮条不做任何事。
     self.panRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
     self.panRecognizer.maximumNumberOfTouches = 1;
     self.panRecognizer.delegate = self;
@@ -108,13 +136,19 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
     longPressRecognizer.allowableMovement = 10.0;
     [self.handleView addGestureRecognizer:longPressRecognizer];
 
-    self.nameLabel = [self capsuleLabel];
-    [self.view addSubview:self.nameLabel];
-    self.feedbackLabel = [self capsuleLabel];
+    self.feedbackLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    self.feedbackLabel.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.86];
+    self.feedbackLabel.textColor = UIColor.whiteColor;
+    self.feedbackLabel.textAlignment = NSTextAlignmentCenter;
+    self.feedbackLabel.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightMedium];
+    self.feedbackLabel.layer.cornerRadius = 16.0;
+    self.feedbackLabel.clipsToBounds = YES;
+    self.feedbackLabel.alpha = 0.0;
     [self.view addSubview:self.feedbackLabel];
 
+    self.hoverFeedbackGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadFromSettings) name:KSBallSettingsDidChangeNotification object:self.settingsStore];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleOutsideTouch:) name:KSBallHUDOutsideTouchNotification object:nil];
     [self reloadFromSettings];
 }
 
@@ -125,12 +159,6 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     [self layoutHandle];
-    if (self.menuVisible) {
-        NSArray<NSValue *> *centers = [self menuCenters];
-        [centers enumerateObjectsUsingBlock:^(NSValue * _Nonnull value, NSUInteger index, BOOL * _Nonnull stop) {
-            self.menuButtons[index].center = value.CGPointValue;
-        }];
-    }
 }
 
 - (void)reloadFromSettings {
@@ -138,40 +166,35 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
         return;
     }
     [self dismissMenuAnimated:NO];
+    [self reloadIcons];
     [self layoutHandle];
 }
 
-#pragma mark - 布局
-
-- (UILabel *)capsuleLabel {
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
-    label.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.86];
-    label.textColor = UIColor.whiteColor;
-    label.textAlignment = NSTextAlignmentCenter;
-    label.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightMedium];
-    label.layer.cornerRadius = 13.0;
-    label.clipsToBounds = YES;
-    label.alpha = 0.0;
-    label.userInteractionEnabled = NO;
-    return label;
+- (void)reloadIcons {
+    // 图标在设置变化时预先加载，避免滑出菜单时卡顿。
+    NSMutableDictionary<NSString *, UIImage *> *icons = [NSMutableDictionary dictionary];
+    for (KSBallShortcut *shortcut in self.settingsStore.settings.shortcuts) {
+        NSString *key = shortcut.bundleIdentifier.lowercaseString;
+        UIImage *icon = self.iconsByBundleIdentifier[key] ?: [self.applicationBridge iconForBundleIdentifier:shortcut.bundleIdentifier];
+        if (icon) {
+            icons[key] = icon;
+        }
+    }
+    self.iconsByBundleIdentifier = icons;
 }
 
-- (CGRect)safeBounds {
-    UIEdgeInsets insets = self.view.safeAreaInsets;
-    return UIEdgeInsetsInsetRect(self.view.bounds, UIEdgeInsetsMake(insets.top + 8.0, insets.left + 8.0, insets.bottom + 8.0, insets.right + 8.0));
-}
-
-- (CGFloat)minimumHandleCenterY {
-    return MAX(self.view.safeAreaInsets.top, KSBallHandleVerticalMargin) + KSBallHandleTouchHeight / 2.0;
-}
-
-- (CGFloat)maximumHandleCenterY {
-    CGFloat maximum = CGRectGetHeight(self.view.bounds) - MAX(self.view.safeAreaInsets.bottom, KSBallHandleVerticalMargin) - KSBallHandleTouchHeight / 2.0;
-    return MAX(maximum, [self minimumHandleCenterY]);
-}
+#pragma mark - 悬浮条
 
 - (KSBallEdge)currentEdge {
     return self.dragging && self.dragMoved ? self.dragEdge : self.settingsStore.settings.edge;
+}
+
+- (CGFloat)minimumHandleCenterY {
+    return KSBallHandleVerticalInset + KSBallHandleTouchHeight / 2.0;
+}
+
+- (CGFloat)maximumHandleCenterY {
+    return MAX(CGRectGetHeight(self.view.bounds) - KSBallHandleVerticalInset - KSBallHandleTouchHeight / 2.0, [self minimumHandleCenterY]);
 }
 
 - (CGFloat)currentHandleCenterY {
@@ -184,8 +207,7 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
 - (void)layoutHandle {
     KSBallEdge edge = [self currentEdge];
     CGFloat centerY = [self currentHandleCenterY];
-    CGFloat viewWidth = CGRectGetWidth(self.view.bounds);
-    CGFloat handleX = edge == KSBallEdgeLeft ? 0.0 : viewWidth - KSBallHandleTouchWidth;
+    CGFloat handleX = edge == KSBallEdgeLeft ? 0.0 : CGRectGetWidth(self.view.bounds) - KSBallHandleTouchWidth;
     self.handleView.frame = CGRectMake(handleX, centerY - KSBallHandleTouchHeight / 2.0, KSBallHandleTouchWidth, KSBallHandleTouchHeight);
     [self layoutBar];
     [self refreshHitTargets];
@@ -194,94 +216,87 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
 - (void)layoutBar {
     BOOL active = self.menuVisible || self.dragging;
     CGFloat barWidth = active ? KSBallHandleActiveBarWidth : KSBallHandleBarWidth;
-    KSBallEdge edge = [self currentEdge];
-    // 贴边一侧保持平直，只圆角化朝向屏幕内侧的两个角。
-    CGFloat barX = edge == KSBallEdgeLeft ? 0.0 : KSBallHandleTouchWidth - barWidth;
+    CGFloat barX = [self currentEdge] == KSBallEdgeLeft ? KSBallHandleEdgeInset : KSBallHandleTouchWidth - KSBallHandleEdgeInset - barWidth;
     self.barView.frame = CGRectMake(barX, (KSBallHandleTouchHeight - KSBallHandleBarHeight) / 2.0, barWidth, KSBallHandleBarHeight);
     self.barView.layer.cornerRadius = barWidth / 2.0;
-    self.barView.layer.maskedCorners = edge == KSBallEdgeLeft ? (kCALayerMaxXMinYCorner | kCALayerMaxXMaxYCorner) : (kCALayerMinXMinYCorner | kCALayerMinXMaxYCorner);
-    self.barView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:active ? 0.98 : 0.82];
+    self.barView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:active ? 0.98 : 0.8];
 }
 
-- (void)setBarActiveAnimated {
-    [UIView animateWithDuration:0.16 animations:^{
-        [self layoutBar];
-    }];
+- (CGPoint)barCenter {
+    return [self.handleView convertPoint:self.barView.center toView:self.view];
 }
 
-- (CGPoint)fanAnchor {
-    CGRect safeBounds = [self safeBounds];
-    CGFloat x = [self currentEdge] == KSBallEdgeLeft ? CGRectGetMinX(safeBounds) + KSBallFanAnchorInset : CGRectGetMaxX(safeBounds) - KSBallFanAnchorInset;
-    return CGPointMake(x, [self currentHandleCenterY]);
-}
-
-- (NSArray<NSValue *> *)menuCenters {
-    KSBallSettings *settings = self.settingsStore.settings;
-    return [KSBallFanLayout centersForItemCount:self.menuButtons.count anchorCenter:[self fanAnchor] safeBounds:[self safeBounds] edge:[self currentEdge] bias:settings.fanBias];
+- (CGRect)menuSafeBounds {
+    UIEdgeInsets insets = self.view.safeAreaInsets;
+    return UIEdgeInsetsInsetRect(self.view.bounds, UIEdgeInsetsMake(insets.top + 8.0, insets.left + 8.0, insets.bottom + 8.0, insets.right + 8.0));
 }
 
 #pragma mark - 扇形菜单
 
-- (void)toggleMenu {
-    if (self.menuVisible) {
-        [self dismissMenuAnimated:YES];
-    } else {
-        [self showMenu];
-    }
-}
-
-- (void)showMenu {
+- (BOOL)showMenu {
     NSArray<KSBallShortcut *> *shortcuts = self.settingsStore.settings.shortcuts;
     if (shortcuts.count == 0) {
         [self showFeedback:@"长按悬浮条进入设置添加应用"];
-        return;
+        return NO;
     }
 
-    [self rebuildMenuForShortcuts:shortcuts];
+    KSBallSettings *settings = self.settingsStore.settings;
+    CGFloat scale = 1.0;
+    CGPoint anchor = [self barCenter];
+    NSArray<NSValue *> *centers = [KSBallFanLayout centersForItemCount:shortcuts.count anchorCenter:anchor safeBounds:[self menuSafeBounds] edge:[self currentEdge] itemSize:settings.iconSize spacing:settings.iconSpacing scale:&scale];
+    self.menuItemSize = settings.iconSize * scale;
+    // 命中范围覆盖到相邻图标间隙的一半，滑动时不会出现“空档”。
+    self.menuHoverRadius = (settings.iconSize + settings.iconSpacing) * scale / 2.0 + 2.0;
+    [self rebuildMenuItemsForShortcuts:[shortcuts subarrayWithRange:NSMakeRange(0, centers.count)]];
+
     self.menuVisible = YES;
-    NSArray<NSValue *> *centers = [self menuCenters];
-    CGPoint anchor = [self fanAnchor];
-    for (UIButton *button in self.menuButtons) {
-        button.hidden = NO;
-        button.alpha = 0.0;
-        button.center = anchor;
-        button.transform = CGAffineTransformMakeScale(0.2, 0.2);
+    self.backdropView.hidden = NO;
+    for (UIView *itemView in self.menuItemViews) {
+        itemView.center = anchor;
+        itemView.alpha = 0.0;
+        itemView.transform = CGAffineTransformMakeScale(0.2, 0.2);
     }
-    [self refreshHitTargets];
-    [self setBarActiveAnimated];
-    [UIView animateWithDuration:0.32 delay:0.0 usingSpringWithDamping:0.78 initialSpringVelocity:0.0 options:UIViewAnimationOptionAllowUserInteraction animations:^{
-        [self.menuButtons enumerateObjectsUsingBlock:^(UIButton * _Nonnull button, NSUInteger index, BOOL * _Nonnull stop) {
-            button.center = centers[index].CGPointValue;
-            button.transform = CGAffineTransformIdentity;
-            button.alpha = [self restingAlphaForButton:button];
+    [self.hoverFeedbackGenerator prepare];
+    [UIView animateWithDuration:0.22 animations:^{
+        self.backdropView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterialDark];
+        [self layoutBar];
+    }];
+    [UIView animateWithDuration:0.34 delay:0.0 usingSpringWithDamping:0.78 initialSpringVelocity:0.0 options:UIViewAnimationOptionAllowUserInteraction animations:^{
+        [self.menuItemViews enumerateObjectsUsingBlock:^(UIView * _Nonnull itemView, NSUInteger index, BOOL * _Nonnull stop) {
+            itemView.center = centers[index].CGPointValue;
+            itemView.transform = CGAffineTransformIdentity;
+            itemView.alpha = 1.0;
         }];
     } completion:nil];
+    return YES;
 }
 
 - (void)dismissMenuAnimated:(BOOL)animated {
-    [self updateHoveredButton:nil];
-    if (!self.menuVisible && self.menuButtons.count == 0) {
+    [self updateHoveredItemView:nil];
+    if (!self.menuVisible && self.menuItemViews.count == 0) {
         return;
     }
     self.menuVisible = NO;
-    [self refreshHitTargets];
-    NSArray<UIButton *> *buttons = [self.menuButtons copy];
-    CGPoint anchor = [self fanAnchor];
+    NSArray<UIView *> *itemViews = [self.menuItemViews copy];
+    [self.menuItemViews removeAllObjects];
+    self.menuShortcuts = @[];
+    CGPoint anchor = [self barCenter];
     void (^changes)(void) = ^{
-        for (UIButton *button in buttons) {
-            button.alpha = 0.0;
-            button.center = anchor;
-            button.transform = CGAffineTransformMakeScale(0.2, 0.2);
+        for (UIView *itemView in itemViews) {
+            itemView.alpha = 0.0;
+            itemView.center = anchor;
+            itemView.transform = CGAffineTransformMakeScale(0.2, 0.2);
         }
+        self.backdropView.effect = nil;
         [self layoutBar];
     };
     void (^completion)(BOOL) = ^(BOOL finished) {
-        // 动画期间菜单可能已被重新打开，只隐藏仍处于收起状态的旧按钮。
-        for (UIButton *button in buttons) {
-            if (!self.menuVisible || ![self.menuButtons containsObject:button]) {
-                button.hidden = YES;
-                button.transform = CGAffineTransformIdentity;
-            }
+        for (UIView *itemView in itemViews) {
+            [itemView removeFromSuperview];
+        }
+        // 动画期间菜单可能已被重新打开，此时保留模糊背景。
+        if (!self.menuVisible) {
+            self.backdropView.hidden = YES;
         }
     };
     if (animated) {
@@ -292,135 +307,148 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
     }
 }
 
-- (void)rebuildMenuForShortcuts:(NSArray<KSBallShortcut *> *)shortcuts {
-    for (UIButton *button in self.menuButtons) {
-        [button removeFromSuperview];
+- (void)rebuildMenuItemsForShortcuts:(NSArray<KSBallShortcut *> *)shortcuts {
+    for (UIView *itemView in self.menuItemViews) {
+        [itemView removeFromSuperview];
     }
-    [self.menuButtons removeAllObjects];
-    [self.shortcutsByIdentifier removeAllObjects];
-    [self.unavailableIdentifiers removeAllObjects];
+    [self.menuItemViews removeAllObjects];
+    self.menuShortcuts = shortcuts;
 
-    NSMutableDictionary<NSString *, KSBallApplication *> *applicationsByIdentifier = [NSMutableDictionary dictionary];
-    for (KSBallApplication *application in self.applicationBridge.availableApplications) {
-        applicationsByIdentifier[application.bundleIdentifier.lowercaseString] = application;
-    }
-
+    CGFloat size = self.menuItemSize;
     for (KSBallShortcut *shortcut in shortcuts) {
-        KSBallApplication *application = applicationsByIdentifier[shortcut.bundleIdentifier.lowercaseString];
-        NSString *identifier = shortcut.identifier.UUIDString;
-        UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-        button.bounds = CGRectMake(0.0, 0.0, KSBallMenuButtonSize, KSBallMenuButtonSize);
-        button.layer.cornerRadius = KSBallMenuButtonSize / 2.0;
-        button.layer.borderWidth = 1.0;
-        button.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.22].CGColor;
-        button.layer.shadowColor = UIColor.blackColor.CGColor;
-        button.layer.shadowOpacity = 0.28;
-        button.layer.shadowRadius = 6.0;
-        button.layer.shadowOffset = CGSizeMake(0.0, 2.0);
-        button.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.9];
-        button.tintColor = UIColor.whiteColor;
-        button.accessibilityLabel = shortcut.displayName;
-        button.accessibilityIdentifier = identifier;
-        UIImage *icon = application.icon ?: [UIImage systemImageNamed:@"app.fill"];
-        [button setImage:[icon imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal] forState:UIControlStateNormal];
-        button.imageView.contentMode = UIViewContentModeScaleAspectFit;
-        button.imageView.layer.cornerRadius = 9.0;
-        button.imageView.clipsToBounds = YES;
-        button.contentEdgeInsets = UIEdgeInsetsMake(8.0, 8.0, 8.0, 8.0);
-        button.hidden = YES;
-        if (!application) {
-            [self.unavailableIdentifiers addObject:identifier];
+        UIView *itemView = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, size, size)];
+        itemView.userInteractionEnabled = NO;
+        itemView.layer.shadowColor = UIColor.blackColor.CGColor;
+        itemView.layer.shadowOpacity = 0.3;
+        itemView.layer.shadowRadius = 5.0;
+        itemView.layer.shadowOffset = CGSizeMake(0.0, 2.0);
+        itemView.layer.shadowPath = [UIBezierPath bezierPathWithOvalInRect:itemView.bounds].CGPath;
+
+        UIImageView *iconView = [[UIImageView alloc] initWithFrame:itemView.bounds];
+        iconView.layer.cornerRadius = size / 2.0;
+        iconView.clipsToBounds = YES;
+        UIImage *icon = self.iconsByBundleIdentifier[shortcut.bundleIdentifier.lowercaseString];
+        if (icon) {
+            iconView.image = icon;
+            iconView.contentMode = UIViewContentModeScaleAspectFill;
+        } else {
+            iconView.image = [UIImage systemImageNamed:@"app.fill"];
+            iconView.tintColor = UIColor.whiteColor;
+            iconView.backgroundColor = [UIColor colorWithWhite:0.18 alpha:0.95];
+            iconView.contentMode = UIViewContentModeCenter;
         }
-        [button addTarget:self action:@selector(launchShortcut:) forControlEvents:UIControlEventTouchUpInside];
-        [self.view insertSubview:button belowSubview:self.handleView];
-        [self.menuButtons addObject:button];
-        self.shortcutsByIdentifier[identifier] = shortcut;
+        [itemView addSubview:iconView];
+        itemView.accessibilityLabel = shortcut.displayName;
+        [self.view insertSubview:itemView belowSubview:self.previewImageView];
+        [self.menuItemViews addObject:itemView];
     }
 }
 
-- (CGFloat)restingAlphaForButton:(UIButton *)button {
-    return [self.unavailableIdentifiers containsObject:button.accessibilityIdentifier] ? 0.55 : 1.0;
-}
-
-- (nullable UIButton *)menuButtonNearPoint:(CGPoint)point {
-    UIButton *nearestButton = nil;
-    CGFloat nearestDistance = KSBallMenuHoverRadius;
-    for (UIButton *button in self.menuButtons) {
-        CGFloat distance = hypot(button.center.x - point.x, button.center.y - point.y);
+- (nullable UIView *)menuItemViewNearPoint:(CGPoint)point {
+    UIView *nearestItemView = nil;
+    CGFloat nearestDistance = self.menuHoverRadius;
+    for (UIView *itemView in self.menuItemViews) {
+        CGFloat distance = hypot(itemView.center.x - point.x, itemView.center.y - point.y);
         if (distance <= nearestDistance) {
             nearestDistance = distance;
-            nearestButton = button;
+            nearestItemView = itemView;
         }
     }
-    return nearestButton;
+    return nearestItemView;
 }
 
-- (void)updateHoveredButton:(nullable UIButton *)button {
-    if (button == self.hoveredButton) {
+- (void)updateHoveredItemView:(nullable UIView *)itemView {
+    if (itemView == self.hoveredItemView) {
         return;
     }
-    UIButton *previousButton = self.hoveredButton;
-    self.hoveredButton = button;
-    [UIView animateWithDuration:0.12 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
-        previousButton.transform = CGAffineTransformIdentity;
-        previousButton.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.22].CGColor;
-        button.transform = CGAffineTransformMakeScale(1.22, 1.22);
-        button.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.9].CGColor;
+    UIView *previousItemView = self.hoveredItemView;
+    self.hoveredItemView = itemView;
+    if (itemView) {
+        // 每移到一个新图标上触发一次 Taptic Engine 震动。
+        [self.hoverFeedbackGenerator impactOccurred];
+        [self.hoverFeedbackGenerator prepare];
+    }
+
+    [UIView animateWithDuration:0.14 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        previousItemView.transform = CGAffineTransformIdentity;
+        itemView.transform = CGAffineTransformMakeScale(1.25, 1.25);
     } completion:nil];
 
-    if (!button) {
-        [UIView animateWithDuration:0.12 animations:^{
-            self.nameLabel.alpha = 0.0;
-        }];
+    if (!itemView) {
+        [UIView animateWithDuration:0.14 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+            self.previewImageView.alpha = 0.0;
+            self.previewImageView.transform = CGAffineTransformMakeScale(0.85, 0.85);
+            self.previewNameLabel.alpha = 0.0;
+        } completion:nil];
         return;
     }
-    KSBallShortcut *shortcut = self.shortcutsByIdentifier[button.accessibilityIdentifier];
-    self.nameLabel.text = shortcut.displayName;
-    CGFloat width = MIN(ceil([self.nameLabel sizeThatFits:CGSizeMake(CGFLOAT_MAX, 26.0)].width) + 24.0, CGRectGetWidth(self.view.bounds) - 32.0);
-    CGRect safeBounds = [self safeBounds];
-    CGFloat labelY = button.center.y - KSBallMenuButtonSize * 0.61 - 34.0;
-    if (labelY < CGRectGetMinY(safeBounds)) {
-        labelY = button.center.y + KSBallMenuButtonSize * 0.61 + 8.0;
+
+    NSUInteger index = [self.menuItemViews indexOfObjectIdenticalTo:itemView];
+    KSBallShortcut *shortcut = index < self.menuShortcuts.count ? self.menuShortcuts[index] : nil;
+    UIImage *icon = self.iconsByBundleIdentifier[shortcut.bundleIdentifier.lowercaseString];
+    self.previewImageView.image = icon ?: [UIImage systemImageNamed:@"app.fill"];
+    self.previewImageView.tintColor = UIColor.whiteColor;
+    self.previewNameLabel.text = shortcut.displayName;
+
+    // 预览放在屏幕中央，与扇形菜单重叠时移到扇形另一侧的空白区域。
+    CGRect bounds = self.view.bounds;
+    CGPoint previewCenter = CGPointMake(CGRectGetMidX(bounds), CGRectGetMidY(bounds) - 20.0);
+    CGRect previewFrame = CGRectMake(previewCenter.x - KSBallPreviewIconSize / 2.0, previewCenter.y - KSBallPreviewIconSize / 2.0, KSBallPreviewIconSize, KSBallPreviewIconSize + 40.0);
+    BOOL overlapsMenu = NO;
+    for (UIView *menuItemView in self.menuItemViews) {
+        if (CGRectIntersectsRect(CGRectInset(menuItemView.frame, -8.0, -8.0), previewFrame)) {
+            overlapsMenu = YES;
+            break;
+        }
     }
-    CGFloat labelX = MIN(MAX(button.center.x - width / 2.0, CGRectGetMinX(safeBounds)), CGRectGetMaxX(safeBounds) - width);
-    self.nameLabel.frame = CGRectMake(labelX, labelY, width, 26.0);
-    self.nameLabel.alpha = 1.0;
+    if (overlapsMenu) {
+        CGFloat barY = [self barCenter].y;
+        previewCenter.y = barY > CGRectGetMidY(bounds) ? CGRectGetHeight(bounds) * 0.25 : CGRectGetHeight(bounds) * 0.72;
+    }
+    self.previewImageView.transform = CGAffineTransformIdentity;
+    self.previewImageView.center = previewCenter;
+    CGFloat labelWidth = CGRectGetWidth(bounds) - 48.0;
+    self.previewNameLabel.frame = CGRectMake(24.0, previewCenter.y + KSBallPreviewIconSize / 2.0 + 12.0, labelWidth, 24.0);
+    if (self.previewImageView.alpha < 0.01) {
+        self.previewImageView.transform = CGAffineTransformMakeScale(0.85, 0.85);
+    }
+    [UIView animateWithDuration:0.16 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        self.previewImageView.alpha = 1.0;
+        self.previewImageView.transform = CGAffineTransformIdentity;
+        self.previewNameLabel.alpha = 1.0;
+    } completion:nil];
 }
 
-- (void)launchShortcut:(UIButton *)sender {
-    KSBallShortcut *shortcut = self.shortcutsByIdentifier[sender.accessibilityIdentifier];
-    [self dismissMenuAnimated:YES];
-    if (!shortcut || ![self.applicationBridge launchBundleIdentifier:shortcut.bundleIdentifier]) {
+- (void)launchShortcut:(KSBallShortcut *)shortcut {
+    if (![self.applicationBridge launchBundleIdentifier:shortcut.bundleIdentifier]) {
         [self showFeedback:@"应用不可用或无法启动"];
     }
 }
 
 #pragma mark - 手势
 
-- (void)handleTap:(UITapGestureRecognizer *)recognizer {
-    if (recognizer.state == UIGestureRecognizerStateEnded) {
-        [self toggleMenu];
-    }
-}
-
-// 从悬浮条向内滑动即展开扇形菜单；手指不抬起滑到图标上松手即可启动，松手在空白处则保持菜单打开以便点选。
+// 从悬浮条向内滑出扇形菜单；滑到图标上显示名称并震动，松手启动该应用，在空白处松手则取消。
 - (void)handlePan:(UIPanGestureRecognizer *)recognizer {
     CGPoint location = [recognizer locationInView:self.view];
     switch (recognizer.state) {
         case UIGestureRecognizerStateBegan:
-            if (!self.menuVisible) {
-                [self showMenu];
+            if ([self showMenu]) {
+                [self updateHoveredItemView:[self menuItemViewNearPoint:location]];
             }
-            [self updateHoveredButton:[self menuButtonNearPoint:location]];
             break;
         case UIGestureRecognizerStateChanged:
             if (self.menuVisible) {
-                [self updateHoveredButton:[self menuButtonNearPoint:location]];
+                [self updateHoveredItemView:[self menuItemViewNearPoint:location]];
             }
             break;
         case UIGestureRecognizerStateEnded: {
-            UIButton *target = self.menuVisible ? self.hoveredButton : nil;
-            [self updateHoveredButton:nil];
+            KSBallShortcut *target = nil;
+            if (self.menuVisible) {
+                UIView *itemView = [self menuItemViewNearPoint:location];
+                NSUInteger index = itemView ? [self.menuItemViews indexOfObjectIdenticalTo:itemView] : NSNotFound;
+                target = index < self.menuShortcuts.count ? self.menuShortcuts[index] : nil;
+            }
+            [self dismissMenuAnimated:YES];
             if (target) {
                 [self launchShortcut:target];
             }
@@ -428,7 +456,7 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
         }
         case UIGestureRecognizerStateCancelled:
         case UIGestureRecognizerStateFailed:
-            [self updateHoveredButton:nil];
+            [self dismissMenuAnimated:YES];
             break;
         default:
             break;
@@ -446,7 +474,9 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
             self.dragStartLocation = location;
             self.dragEdge = self.settingsStore.settings.edge;
             self.dragCenterY = [self currentHandleCenterY];
-            [self setBarActiveAnimated];
+            [UIView animateWithDuration:0.16 animations:^{
+                [self layoutBar];
+            }];
             break;
         case UIGestureRecognizerStateChanged: {
             if (!self.dragMoved && hypot(location.x - self.dragStartLocation.x, location.y - self.dragStartLocation.y) >= KSBallDragActivationDistance) {
@@ -504,20 +534,13 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
     return YES;
 }
 
-- (void)handleOutsideTouch:(NSNotification *)notification {
-    if (self.menuVisible && !self.dragging) {
-        [self dismissMenuAnimated:YES];
-    }
-}
-
 #pragma mark - 辅助
 
 - (void)showFeedback:(NSString *)message {
     self.feedbackLabel.text = message;
     CGFloat width = MIN(ceil([self.feedbackLabel sizeThatFits:CGSizeMake(CGFLOAT_MAX, 32.0)].width) + 32.0, CGRectGetWidth(self.view.bounds) - 32.0);
-    CGFloat bottom = CGRectGetHeight(self.view.bounds) - MAX(self.view.safeAreaInsets.bottom, KSBallHandleVerticalMargin);
+    CGFloat bottom = CGRectGetHeight(self.view.bounds) - MAX(self.view.safeAreaInsets.bottom, 44.0);
     self.feedbackLabel.frame = CGRectMake(CGRectGetMidX(self.view.bounds) - width / 2.0, bottom - 40.0, width, 32.0);
-    self.feedbackLabel.layer.cornerRadius = 16.0;
     [UIView animateWithDuration:0.15 animations:^{
         self.feedbackLabel.alpha = 1.0;
     } completion:^(BOOL finished) {
@@ -528,11 +551,8 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
 }
 
 - (void)refreshHitTargets {
-    NSMutableArray<UIView *> *targets = [NSMutableArray arrayWithObject:self.handleView];
-    if (self.menuVisible) {
-        [targets addObjectsFromArray:self.menuButtons];
-    }
-    ((KSBallHUDCanvasView *)self.view).interactiveViews = targets;
+    // 菜单图标不参与命中测试：整个选择过程都由悬浮条上的同一次滑动手势完成。
+    ((KSBallHUDCanvasView *)self.view).interactiveViews = @[self.handleView];
 }
 
 @end

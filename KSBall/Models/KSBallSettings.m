@@ -1,6 +1,13 @@
 #import "KSBallSettings.h"
+#import <math.h>
 
 const NSUInteger KSBallMaximumShortcuts = 16;
+const CGFloat KSBallMinimumIconSize = 40.0;
+const CGFloat KSBallMaximumIconSize = 64.0;
+const CGFloat KSBallDefaultIconSize = 50.0;
+const CGFloat KSBallMinimumIconSpacing = 4.0;
+const CGFloat KSBallMaximumIconSpacing = 24.0;
+const CGFloat KSBallDefaultIconSpacing = 12.0;
 static NSInteger const KSBallSettingsSchemaVersion = 1;
 
 @implementation KSBallShortcut
@@ -54,7 +61,6 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     settings.enabled = YES;
     settings.edge = KSBallEdgeRight;
     settings.normalizedVerticalPosition = 0.5;
-    settings.fanBias = KSBallFanBiasCenter;
     settings.shortcuts = [NSMutableArray array];
     return settings;
 }
@@ -62,6 +68,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 - (instancetype)init {
     self = [super init];
     if (self) {
+        _iconSize = KSBallDefaultIconSize;
+        _iconSpacing = KSBallDefaultIconSpacing;
         _shortcuts = [NSMutableArray array];
     }
     return self;
@@ -72,7 +80,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     copy.enabled = self.enabled;
     copy.edge = self.edge;
     copy.normalizedVerticalPosition = self.normalizedVerticalPosition;
-    copy.fanBias = self.fanBias;
+    copy.iconSize = self.iconSize;
+    copy.iconSpacing = self.iconSpacing;
     for (KSBallShortcut *shortcut in self.shortcuts) {
         [copy.shortcuts addObject:[shortcut copy]];
     }
@@ -82,9 +91,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 - (void)normalize {
     self.normalizedVerticalPosition = MIN(MAX(self.normalizedVerticalPosition, 0.0), 1.0);
     self.edge = self.edge == KSBallEdgeLeft ? KSBallEdgeLeft : KSBallEdgeRight;
-    if (self.fanBias < KSBallFanBiasUpper || self.fanBias > KSBallFanBiasLower) {
-        self.fanBias = KSBallFanBiasCenter;
-    }
+    self.iconSize = isfinite(self.iconSize) ? MIN(MAX(self.iconSize, KSBallMinimumIconSize), KSBallMaximumIconSize) : KSBallDefaultIconSize;
+    self.iconSpacing = isfinite(self.iconSpacing) ? MIN(MAX(self.iconSpacing, KSBallMinimumIconSpacing), KSBallMaximumIconSpacing) : KSBallDefaultIconSpacing;
 
     NSMutableArray<KSBallShortcut *> *validShortcuts = [NSMutableArray array];
     NSMutableSet<NSString *> *bundleIdentifiers = [NSMutableSet set];
@@ -113,7 +121,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         @"enabled": @(self.enabled),
         @"edge": @(self.edge),
         @"normalizedVerticalPosition": @(self.normalizedVerticalPosition),
-        @"fanBias": @(self.fanBias),
+        @"iconSize": @(self.iconSize),
+        @"iconSpacing": @(self.iconSpacing),
         @"shortcuts": shortcuts,
     };
 }
@@ -127,11 +136,13 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     NSNumber *enabled = [dictionary[@"enabled"] isKindOfClass:NSNumber.class] ? dictionary[@"enabled"] : nil;
     NSNumber *edge = [dictionary[@"edge"] isKindOfClass:NSNumber.class] ? dictionary[@"edge"] : nil;
     NSNumber *verticalPosition = [dictionary[@"normalizedVerticalPosition"] isKindOfClass:NSNumber.class] ? dictionary[@"normalizedVerticalPosition"] : nil;
-    NSNumber *fanBias = [dictionary[@"fanBias"] isKindOfClass:NSNumber.class] ? dictionary[@"fanBias"] : nil;
+    NSNumber *iconSize = [dictionary[@"iconSize"] isKindOfClass:NSNumber.class] ? dictionary[@"iconSize"] : nil;
+    NSNumber *iconSpacing = [dictionary[@"iconSpacing"] isKindOfClass:NSNumber.class] ? dictionary[@"iconSpacing"] : nil;
     if (enabled) settings.enabled = enabled.boolValue;
     if (edge) settings.edge = edge.integerValue;
     if (verticalPosition) settings.normalizedVerticalPosition = verticalPosition.doubleValue;
-    if (fanBias) settings.fanBias = fanBias.integerValue;
+    if (iconSize) settings.iconSize = iconSize.doubleValue;
+    if (iconSpacing) settings.iconSpacing = iconSpacing.doubleValue;
 
     NSArray *shortcutDictionaries = [dictionary[@"shortcuts"] isKindOfClass:NSArray.class] ? dictionary[@"shortcuts"] : @[];
     for (id item in shortcutDictionaries) {

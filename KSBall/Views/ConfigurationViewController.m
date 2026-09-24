@@ -15,6 +15,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 @property (nonatomic, strong) KSBallSettingsStore *settingsStore;
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
 @property (nonatomic, strong) HUDSceneCoordinator *hudSceneCoordinator;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, UIImage *> *listIconsByBundleIdentifier;
 @end
 
 @implementation ConfigurationViewController
@@ -25,6 +26,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
         _settingsStore = settingsStore;
         _applicationBridge = applicationBridge;
         _hudSceneCoordinator = hudSceneCoordinator;
+        _listIconsByBundleIdentifier = [NSMutableDictionary dictionary];
     }
     return self;
 }
@@ -56,6 +58,9 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     if (section == KSBallConfigurationSectionHUD) {
         return 2;
     }
+    if (section == KSBallConfigurationSectionLayout) {
+        return 2;
+    }
     if (section == KSBallConfigurationSectionShortcuts) {
         return self.settingsStore.settings.shortcuts.count + 1;
     }
@@ -74,13 +79,13 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (section == KSBallConfigurationSectionHUD) {
-        return @"悬浮条贴在屏幕边缘。点按或向内滑动展开扇形菜单，滑到图标上松手即可启动；长按不移动回到此设置页，长按后拖动可调整位置。";
+        return @"悬浮条位于屏幕边缘内侧。从悬浮条向内滑动展开扇形菜单，滑到图标上会显示名称并震动，松手即启动；在空白处松手则取消。长按不移动回到此设置页，长按后拖动可调整位置。";
     }
     if (section == KSBallConfigurationSectionLayout) {
-        return @"拖动悬浮条越过屏幕中线会切换到另一侧；菜单始终向屏幕内侧展开。";
+        return @"扇形菜单围绕悬浮条展开：屏幕中部为半圆，靠近顶部或底部时自动收成四分之一圆。屏幕空间不足时会等比缩小图标。";
     }
     if (section == KSBallConfigurationSectionShortcuts) {
-        return @"前 8 个入口位于内圈，后 8 个入口位于外圈。编辑模式下可删除和排序。";
+        return @"排在前面的入口位于靠近悬浮条的内圈。编辑模式下可删除和排序。";
     }
     return @"KSBall 只应通过 TrollStore 安装。私有能力不可用时，配置仍会保留。";
 }
@@ -110,17 +115,22 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     }
 
     if (indexPath.section == KSBallConfigurationSectionLayout) {
-        UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"LayoutCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"LayoutCell"];
-        cell.textLabel.text = @"展开位置";
-        UISegmentedControl *segmentedControl = [cell.accessoryView isKindOfClass:UISegmentedControl.class] ? (UISegmentedControl *)cell.accessoryView : nil;
-        if (!segmentedControl) {
-            segmentedControl = [[UISegmentedControl alloc] initWithItems:@[@"偏上", @"居中", @"偏下"]];
-            segmentedControl.tag = 12;
-            segmentedControl.frame = CGRectMake(0.0, 0.0, 188.0, 32.0);
-            [segmentedControl addTarget:self action:@selector(changeFanBias:) forControlEvents:UIControlEventValueChanged];
-            cell.accessoryView = segmentedControl;
+        UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"LayoutCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"LayoutCell"];
+        UIStepper *stepper = [cell.accessoryView isKindOfClass:UIStepper.class] ? (UIStepper *)cell.accessoryView : nil;
+        if (!stepper) {
+            stepper = [UIStepper new];
+            [stepper addTarget:self action:@selector(changeLayoutMetric:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = stepper;
         }
-        segmentedControl.selectedSegmentIndex = self.settingsStore.settings.fanBias + 1;
+        KSBallSettings *settings = self.settingsStore.settings;
+        BOOL sizeRow = indexPath.row == 0;
+        stepper.tag = sizeRow ? 12 : 13;
+        stepper.minimumValue = sizeRow ? KSBallMinimumIconSize : KSBallMinimumIconSpacing;
+        stepper.maximumValue = sizeRow ? KSBallMaximumIconSize : KSBallMaximumIconSpacing;
+        stepper.stepValue = 2.0;
+        stepper.value = sizeRow ? settings.iconSize : settings.iconSpacing;
+        cell.textLabel.text = sizeRow ? @"图标大小" : @"图标间距";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f pt", stepper.value];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
         return cell;
     }
@@ -138,7 +148,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
         UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ShortcutCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ShortcutCell"];
         cell.textLabel.text = shortcut.displayName;
         cell.detailTextLabel.text = shortcut.bundleIdentifier;
-        cell.imageView.image = [UIImage systemImageNamed:@"app.fill"];
+        cell.imageView.image = [self listIconForBundleIdentifier:shortcut.bundleIdentifier];
         cell.accessoryType = UITableViewCellAccessoryNone;
         return cell;
     }
@@ -203,10 +213,37 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     }];
 }
 
-- (void)changeFanBias:(UISegmentedControl *)sender {
+- (void)changeLayoutMetric:(UIStepper *)sender {
+    CGFloat value = sender.value;
+    BOOL sizeMetric = sender.tag == 12;
     [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
-        settings.fanBias = sender.selectedSegmentIndex - 1;
+        if (sizeMetric) {
+            settings.iconSize = value;
+        } else {
+            settings.iconSpacing = value;
+        }
     }];
+}
+
+- (UIImage *)listIconForBundleIdentifier:(NSString *)bundleIdentifier {
+    NSString *key = bundleIdentifier.lowercaseString;
+    UIImage *cachedIcon = self.listIconsByBundleIdentifier[key];
+    if (cachedIcon) {
+        return cachedIcon;
+    }
+    UIImage *icon = [self.applicationBridge iconForBundleIdentifier:bundleIdentifier];
+    if (!icon) {
+        return [UIImage systemImageNamed:@"app.fill"];
+    }
+    // 统一缩放成 29pt 圆形，与悬浮菜单中的圆形图标保持一致。
+    CGRect iconRect = CGRectMake(0.0, 0.0, 29.0, 29.0);
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:iconRect.size];
+    UIImage *listIcon = [renderer imageWithActions:^(UIGraphicsImageRendererContext * _Nonnull context) {
+        [[UIBezierPath bezierPathWithOvalInRect:iconRect] addClip];
+        [icon drawInRect:iconRect];
+    }];
+    self.listIconsByBundleIdentifier[key] = listIcon;
+    return listIcon;
 }
 
 - (void)toggleEditing {

@@ -8,34 +8,115 @@
 
 @implementation KSBallFanLayoutTests
 
-- (void)testLayoutsStayInsideSafeBoundsWithoutCrowding {
-    CGRect safeBounds = CGRectMake(8.0, 50.0, 374.0, 710.0);
-    for (NSNumber *countValue in @[@1, @8, @9, @16]) {
-        NSUInteger count = countValue.unsignedIntegerValue;
-        for (NSNumber *edgeValue in @[@(KSBallEdgeLeft), @(KSBallEdgeRight)]) {
-            for (NSNumber *biasValue in @[@(KSBallFanBiasUpper), @(KSBallFanBiasCenter), @(KSBallFanBiasLower)]) {
-                // 与 FloatingHUDViewController 一致：扇形圆心位于安全区边缘内收 20pt 处，紧邻贴边悬浮条。
-                CGPoint anchor = CGPointMake(edgeValue.integerValue == KSBallEdgeLeft ? CGRectGetMinX(safeBounds) + 20.0 : CGRectGetMaxX(safeBounds) - 20.0, 405.0);
-                NSArray<NSValue *> *centers = [KSBallFanLayout centersForItemCount:count anchorCenter:anchor safeBounds:safeBounds edge:edgeValue.integerValue bias:biasValue.integerValue];
-                XCTAssertEqual(centers.count, count);
-                for (NSValue *value in centers) {
-                    CGPoint center = value.CGPointValue;
-                    XCTAssertGreaterThanOrEqual(center.x - 25.0, CGRectGetMinX(safeBounds));
-                    XCTAssertLessThanOrEqual(center.x + 25.0, CGRectGetMaxX(safeBounds));
-                    XCTAssertGreaterThanOrEqual(center.y - 25.0, CGRectGetMinY(safeBounds));
-                    XCTAssertLessThanOrEqual(center.y + 25.0, CGRectGetMaxY(safeBounds));
-                }
-                for (NSUInteger left = 0; left < centers.count; left++) {
-                    for (NSUInteger right = left + 1; right < centers.count; right++) {
-                        CGPoint leftPoint = centers[left].CGPointValue;
-                        CGPoint rightPoint = centers[right].CGPointValue;
-                        CGFloat distance = hypot(leftPoint.x - rightPoint.x, leftPoint.y - rightPoint.y);
-                        XCTAssertGreaterThanOrEqual(distance, 48.0);
+- (NSArray<NSValue *> *)centersForCount:(NSUInteger)count anchorY:(CGFloat)anchorY edge:(KSBallEdge)edge itemSize:(CGFloat)itemSize spacing:(CGFloat)spacing {
+    return [self centersForCount:count anchorY:anchorY edge:edge itemSize:itemSize spacing:spacing scale:NULL];
+}
+
+- (NSArray<NSValue *> *)centersForCount:(NSUInteger)count anchorY:(CGFloat)anchorY edge:(KSBallEdge)edge itemSize:(CGFloat)itemSize spacing:(CGFloat)spacing scale:(CGFloat *)scale {
+    // 与 FloatingHUDViewController 一致：把手距屏幕边缘 10pt。
+    CGRect safeBounds = [self safeBounds];
+    CGFloat anchorX = edge == KSBallEdgeLeft ? 12.0 : CGRectGetMaxX(safeBounds) + 8.0 - 12.0;
+    return [KSBallFanLayout centersForItemCount:count anchorCenter:CGPointMake(anchorX, anchorY) safeBounds:safeBounds edge:edge itemSize:itemSize spacing:spacing scale:scale];
+}
+
+- (CGRect)safeBounds {
+    return CGRectMake(8.0, 50.0, 374.0, 710.0);
+}
+
+- (void)testLayoutsStayInsideSafeBoundsWithConfiguredSpacing {
+    CGRect safeBounds = [self safeBounds];
+    NSArray<NSArray<NSNumber *> *> *metrics = @[@[@40, @4], @[@50, @12], @[@64, @16]];
+    for (NSArray<NSNumber *> *metric in metrics) {
+        CGFloat itemSize = metric[0].doubleValue;
+        CGFloat spacing = metric[1].doubleValue;
+        for (NSNumber *countValue in @[@1, @3, @8, @16]) {
+            for (NSNumber *edgeValue in @[@(KSBallEdgeLeft), @(KSBallEdgeRight)]) {
+                for (NSNumber *anchorYValue in @[@20.0, @120.0, @405.0, @680.0, @800.0]) {
+                    NSUInteger count = countValue.unsignedIntegerValue;
+                    CGFloat scale = 0.0;
+                    NSArray<NSValue *> *centers = [self centersForCount:count anchorY:anchorYValue.doubleValue edge:edgeValue.integerValue itemSize:itemSize spacing:spacing scale:&scale];
+                    XCTAssertEqual(centers.count, count);
+                    XCTAssertGreaterThan(scale, 0.0);
+                    XCTAssertLessThanOrEqual(scale, 1.0);
+                    CGFloat itemRadius = itemSize * scale / 2.0;
+                    for (NSValue *value in centers) {
+                        CGPoint center = value.CGPointValue;
+                        XCTAssertGreaterThanOrEqual(center.x - itemRadius, CGRectGetMinX(safeBounds) - 0.001);
+                        XCTAssertLessThanOrEqual(center.x + itemRadius, CGRectGetMaxX(safeBounds) + 0.001);
+                        XCTAssertGreaterThanOrEqual(center.y - itemRadius, CGRectGetMinY(safeBounds) - 0.001);
+                        XCTAssertLessThanOrEqual(center.y + itemRadius, CGRectGetMaxY(safeBounds) + 0.001);
+                    }
+                    for (NSUInteger left = 0; left < centers.count; left++) {
+                        for (NSUInteger right = left + 1; right < centers.count; right++) {
+                            CGPoint leftPoint = centers[left].CGPointValue;
+                            CGPoint rightPoint = centers[right].CGPointValue;
+                            XCTAssertGreaterThanOrEqual(hypot(leftPoint.x - rightPoint.x, leftPoint.y - rightPoint.y), (itemSize + spacing) * scale - 0.5);
+                        }
                     }
                 }
             }
         }
     }
+}
+
+- (void)testMiddlePositionOpensSymmetricHalfCircle {
+    CGFloat middle = CGRectGetMidY([self safeBounds]);
+    for (NSNumber *edgeValue in @[@(KSBallEdgeLeft), @(KSBallEdgeRight)]) {
+        NSArray<NSValue *> *centers = [self centersForCount:8 anchorY:middle edge:edgeValue.integerValue itemSize:50.0 spacing:12.0];
+        XCTAssertEqualWithAccuracy([self averageYOfCenters:centers], middle, 0.5);
+        // 半圆两端的图标沿屏幕边缘排在把手正上方和正下方。
+        CGFloat edgeColumnX = edgeValue.integerValue == KSBallEdgeLeft ? 33.0 : 357.0;
+        NSUInteger edgeColumnCount = 0;
+        for (NSValue *value in centers) {
+            if (fabs(value.CGPointValue.x - edgeColumnX) < 0.5) {
+                edgeColumnCount++;
+            }
+        }
+        XCTAssertGreaterThanOrEqual(edgeColumnCount, 4);
+    }
+}
+
+- (void)testCornerPositionsOpenQuarterCircleWithFlatOuterRow {
+    CGRect safeBounds = [self safeBounds];
+    for (NSNumber *edgeValue in @[@(KSBallEdgeLeft), @(KSBallEdgeRight)]) {
+        NSArray<NSValue *> *bottomCenters = [self centersForCount:8 anchorY:800.0 edge:edgeValue.integerValue itemSize:50.0 spacing:12.0];
+        CGFloat bottomRowY = CGRectGetMaxY(safeBounds) - 25.0;
+        NSUInteger bottomRowCount = 0;
+        for (NSValue *value in bottomCenters) {
+            XCTAssertLessThanOrEqual(value.CGPointValue.y, bottomRowY + 0.001);
+            if (fabs(value.CGPointValue.y - bottomRowY) < 0.5) {
+                bottomRowCount++;
+            }
+        }
+        XCTAssertGreaterThanOrEqual(bottomRowCount, 2);
+
+        NSArray<NSValue *> *topCenters = [self centersForCount:8 anchorY:20.0 edge:edgeValue.integerValue itemSize:50.0 spacing:12.0];
+        CGFloat topRowY = CGRectGetMinY(safeBounds) + 25.0;
+        NSUInteger topRowCount = 0;
+        for (NSValue *value in topCenters) {
+            XCTAssertGreaterThanOrEqual(value.CGPointValue.y, topRowY - 0.001);
+            if (fabs(value.CGPointValue.y - topRowY) < 0.5) {
+                topRowCount++;
+            }
+        }
+        XCTAssertGreaterThanOrEqual(topRowCount, 2);
+    }
+}
+
+- (void)testDirectionFollowsAvailableSpace {
+    for (NSNumber *edgeValue in @[@(KSBallEdgeLeft), @(KSBallEdgeRight)]) {
+        KSBallEdge edge = edgeValue.integerValue;
+        XCTAssertGreaterThan([self averageYOfCenters:[self centersForCount:8 anchorY:120.0 edge:edge itemSize:50.0 spacing:12.0]], 120.0);
+        XCTAssertLessThan([self averageYOfCenters:[self centersForCount:8 anchorY:680.0 edge:edge itemSize:50.0 spacing:12.0]], 680.0);
+    }
+}
+
+- (CGFloat)averageYOfCenters:(NSArray<NSValue *> *)centers {
+    CGFloat total = 0.0;
+    for (NSValue *value in centers) {
+        total += value.CGPointValue.y;
+    }
+    return centers.count > 0 ? total / centers.count : 0.0;
 }
 
 @end

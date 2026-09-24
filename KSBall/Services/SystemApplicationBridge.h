@@ -18,6 +18,7 @@ typedef BOOL (^KSBallApplicationLauncher)(NSString *bundleIdentifier);
 
 @protocol KSBallSystemApplicationBridging <NSObject>
 - (NSArray<KSBallApplication *> *)availableApplications;
+- (nullable UIImage *)iconForBundleIdentifier:(NSString *)bundleIdentifier;
 - (BOOL)launchBundleIdentifier:(NSString *)bundleIdentifier;
 - (BOOL)isAvailable;
 - (NSString *)unavailabilityReason;
