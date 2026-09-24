@@ -166,8 +166,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     NSNumber *verticalPosition = number(@"normalizedVerticalPosition");
     NSNumber *iconSize = number(@"iconSize");
     NSNumber *iconSpacing = number(@"iconSpacing");
-    // 旧版本只有一个间距，圈间距缺省时沿用它。
-    NSNumber *ringSpacing = number(@"ringSpacing") ?: iconSpacing;
+    // 圈间距是独立的布局配置；旧设置中没有这一项时使用它自己的默认值。
+    NSNumber *ringSpacing = number(@"ringSpacing");
     NSNumber *handleStyle = number(@"handleStyle");
     NSNumber *backdropStyle = number(@"backdropStyle");
     NSNumber *backdropOpacity = number(@"backdropOpacity");
