@@ -5,11 +5,16 @@
 @implementation KSBallApplication
 
 - (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(UIImage *)icon {
+    return [self initWithBundleIdentifier:bundleIdentifier displayName:displayName icon:icon systemApplication:NO];
+}
+
+- (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(UIImage *)icon systemApplication:(BOOL)systemApplication {
     self = [super init];
     if (self) {
         _bundleIdentifier = [bundleIdentifier copy];
         _displayName = [displayName copy];
         _icon = icon;
+        _systemApplication = systemApplication;
     }
     return self;
 }
@@ -87,7 +92,7 @@ UIImage *KSBallListIconImage(UIImage *icon) {
         if (bundleIdentifier.length == 0 || [bundleIdentifier.lowercaseString isEqualToString:ownIdentifier]) {
             continue;
         }
-        if ([self isSystemApplicationProxy:proxy]) {
+        if ([self isHiddenApplicationProxy:proxy]) {
             continue;
         }
 
@@ -95,7 +100,7 @@ UIImage *KSBallListIconImage(UIImage *icon) {
         if (displayName.length == 0) {
             displayName = bundleIdentifier;
         }
-        [applications addObject:[[KSBallApplication alloc] initWithBundleIdentifier:bundleIdentifier displayName:displayName icon:[self iconForProxy:proxy]]];
+        [applications addObject:[[KSBallApplication alloc] initWithBundleIdentifier:bundleIdentifier displayName:displayName icon:[self iconForProxy:proxy] systemApplication:[self isSystemApplicationProxy:proxy]]];
     }
 
     return [applications sortedArrayUsingComparator:^NSComparisonResult(KSBallApplication *left, KSBallApplication *right) {
@@ -182,18 +187,31 @@ UIImage *KSBallListIconImage(UIImage *icon) {
     return nil;
 }
 
+// 系统应用也可以加入快捷列表；只排除主屏上本来就看不到或无法启动的应用（隐藏标签、禁止启动、占位符）。
+- (BOOL)isHiddenApplicationProxy:(id)proxy {
+    SEL selector = NSSelectorFromString(@"appTags");
+    if ([proxy respondsToSelector:selector]) {
+        id tags = ((id (*)(id, SEL))objc_msgSend)(proxy, selector);
+        if ([tags isKindOfClass:NSArray.class] && [tags containsObject:@"hidden"]) {
+            return YES;
+        }
+    }
+    for (NSString *selectorName in @[@"isLaunchProhibited", @"isPlaceholder"]) {
+        selector = NSSelectorFromString(selectorName);
+        if ([proxy respondsToSelector:selector] && ((BOOL (*)(id, SEL))objc_msgSend)(proxy, selector)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 - (BOOL)isSystemApplicationProxy:(id)proxy {
     SEL selector = NSSelectorFromString(@"isSystemOrInternalApp");
     if ([proxy respondsToSelector:selector] && ((BOOL (*)(id, SEL))objc_msgSend)(proxy, selector)) {
         return YES;
     }
-
     NSString *applicationType = [self stringValueForObject:proxy selectors:@[@"applicationType"]];
-    if ([applicationType caseInsensitiveCompare:@"System"] == NSOrderedSame) {
-        return YES;
-    }
-    selector = NSSelectorFromString(@"isLaunchProhibited");
-    return [proxy respondsToSelector:selector] && ((BOOL (*)(id, SEL))objc_msgSend)(proxy, selector);
+    return [applicationType caseInsensitiveCompare:@"System"] == NSOrderedSame;
 }
 
 - (UIImage *)iconForProxy:(id)proxy {

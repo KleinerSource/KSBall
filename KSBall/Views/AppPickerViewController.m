@@ -5,7 +5,7 @@
 @interface AppPickerViewController () <UISearchResultsUpdating>
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
 @property (nonatomic, copy) NSArray<KSBallApplication *> *applications;
-@property (nonatomic, copy) NSArray<KSBallApplication *> *filteredApplications;
+@property (nonatomic, copy) NSArray<NSArray<KSBallApplication *> *> *filteredSections;
 @property (nonatomic, strong) UISearchController *searchController;
 @property (nonatomic, strong) NSMutableSet<NSString *> *existingBundleIdentifiers;
 @property (nonatomic) NSUInteger remainingCapacity;
@@ -58,29 +58,41 @@
 
 - (void)applySearchQuery:(nullable NSString *)text {
     NSString *query = text.lowercaseString;
-    if (query.length == 0) {
-        self.filteredApplications = self.applications;
-        return;
+    NSArray<KSBallApplication *> *matches = self.applications;
+    if (query.length > 0) {
+        matches = [self.applications filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(KSBallApplication *application, NSDictionary<NSString *,id> *bindings) {
+            return [application.displayName.lowercaseString containsString:query] || [application.bundleIdentifier.lowercaseString containsString:query];
+        }]];
     }
-    self.filteredApplications = [self.applications filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(KSBallApplication *application, NSDictionary<NSString *,id> *bindings) {
-        return [application.displayName.lowercaseString containsString:query] || [application.bundleIdentifier.lowercaseString containsString:query];
-    }]];
+    // 第 0 组为用户应用（含 TrollStore 应用），第 1 组为系统应用。
+    NSMutableArray<KSBallApplication *> *userApplications = [NSMutableArray array];
+    NSMutableArray<KSBallApplication *> *systemApplications = [NSMutableArray array];
+    for (KSBallApplication *application in matches) {
+        [application.isSystemApplication ? systemApplications : userApplications addObject:application];
+    }
+    self.filteredSections = @[userApplications, systemApplications];
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return self.applicationBridge.isAvailable ? 1 : 0;
+    return self.applicationBridge.isAvailable ? (NSInteger)self.filteredSections.count : 0;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return self.filteredApplications.count;
+    return self.filteredSections[section].count;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return @"已安装的用户应用";
+    if (self.filteredSections[section].count == 0) {
+        return nil;
+    }
+    return section == 0 ? @"用户应用" : @"系统应用";
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    return @"点应用前的 + 号即可加入快捷列表，可连续添加多个。已添加的应用不会出现在这里；默认隐藏系统内部应用，未列出的应用可通过“手动添加”输入 Bundle ID。";
+    if (section != (NSInteger)self.filteredSections.count - 1) {
+        return nil;
+    }
+    return @"点应用前的 + 号即可加入快捷列表，可连续添加多个。已添加的应用不会出现在这里；未列出的应用可通过“手动添加”输入 Bundle ID。";
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -88,7 +100,7 @@
     if (!cell) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ApplicationCell"];
     }
-    KSBallApplication *application = self.filteredApplications[indexPath.row];
+    KSBallApplication *application = self.filteredSections[indexPath.section][indexPath.row];
     cell.textLabel.text = application.displayName;
     cell.detailTextLabel.text = application.bundleIdentifier;
     cell.imageView.image = [self listIconForApplication:application];
@@ -115,10 +127,10 @@
 }
 
 - (void)addApplicationAtIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.section != 0 || indexPath.row >= (NSInteger)self.filteredApplications.count) {
+    if (indexPath.section >= (NSInteger)self.filteredSections.count || indexPath.row >= (NSInteger)self.filteredSections[indexPath.section].count) {
         return;
     }
-    KSBallApplication *application = self.filteredApplications[indexPath.row];
+    KSBallApplication *application = self.filteredSections[indexPath.section][indexPath.row];
     KSBallShortcut *shortcut = [[KSBallShortcut alloc] initWithBundleIdentifier:application.bundleIdentifier displayName:application.displayName];
     if (![self addShortcut:shortcut]) {
         return;
@@ -128,9 +140,11 @@
     NSMutableArray<KSBallApplication *> *applications = [self.applications mutableCopy];
     [applications removeObjectIdenticalTo:application];
     self.applications = applications;
-    NSMutableArray<KSBallApplication *> *filteredApplications = [self.filteredApplications mutableCopy];
-    [filteredApplications removeObjectAtIndex:indexPath.row];
-    self.filteredApplications = filteredApplications;
+    NSMutableArray<NSArray<KSBallApplication *> *> *sections = [self.filteredSections mutableCopy];
+    NSMutableArray<KSBallApplication *> *rows = [sections[indexPath.section] mutableCopy];
+    [rows removeObjectAtIndex:indexPath.row];
+    sections[indexPath.section] = rows;
+    self.filteredSections = sections;
     [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
     [self updateTitle];
 }

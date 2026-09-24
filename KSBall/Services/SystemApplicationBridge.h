@@ -8,8 +8,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, readonly) NSString *bundleIdentifier;
 @property (nonatomic, copy, readonly) NSString *displayName;
 @property (nonatomic, strong, readonly, nullable) UIImage *icon;
+@property (nonatomic, readonly, getter=isSystemApplication) BOOL systemApplication;
 
 - (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(nullable UIImage *)icon;
+- (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(nullable UIImage *)icon systemApplication:(BOOL)systemApplication;
 
 @end
 
