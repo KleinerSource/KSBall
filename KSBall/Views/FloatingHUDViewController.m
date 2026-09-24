@@ -467,7 +467,7 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
 - (void)handleLongPress:(UILongPressGestureRecognizer *)recognizer {
     CGPoint location = [recognizer locationInView:self.view];
     switch (recognizer.state) {
-        case UIGestureRecognizerStateBegan:
+        case UIGestureRecognizerStateBegan: {
             [self dismissMenuAnimated:YES];
             self.dragging = YES;
             self.dragMoved = NO;
@@ -478,6 +478,7 @@ static const CGFloat KSBallPreviewIconSize = 108.0;
                 [self layoutBar];
             }];
             break;
+        }
         case UIGestureRecognizerStateChanged: {
             if (!self.dragMoved && hypot(location.x - self.dragStartLocation.x, location.y - self.dragStartLocation.y) >= KSBallDragActivationDistance) {
                 self.dragMoved = YES;
