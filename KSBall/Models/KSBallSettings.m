@@ -11,8 +11,11 @@ const CGFloat KSBallDefaultIconSpacing = 12.0;
 const CGFloat KSBallMinimumRingSpacing = 0.0;
 const CGFloat KSBallMaximumRingSpacing = 32.0;
 const CGFloat KSBallDefaultRingSpacing = 12.0;
-const CGFloat KSBallMinimumBackdropOpacity = 0.1;
-const CGFloat KSBallDefaultBackdropOpacity = 1.0;
+const CGFloat KSBallMinimumBackdropBlur = 0.1;
+const CGFloat KSBallDefaultBackdropBlur = 1.0;
+const CGFloat KSBallMinimumHandleTouchRadius = 16.0;
+const CGFloat KSBallMaximumHandleTouchRadius = 60.0;
+const CGFloat KSBallDefaultHandleTouchRadius = 38.0;
 static NSInteger const KSBallSettingsSchemaVersion = 1;
 
 @implementation KSBallShortcut
@@ -76,9 +79,10 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         _iconSize = KSBallDefaultIconSize;
         _iconSpacing = KSBallDefaultIconSpacing;
         _ringSpacing = KSBallDefaultRingSpacing;
-        _handleStyle = KSBallHandleStyleLight;
-        _backdropStyle = KSBallBackdropStyleDark;
-        _backdropOpacity = KSBallDefaultBackdropOpacity;
+        _handleStyle = KSBallHandleStyleAutomatic;
+        _handleTouchRadius = KSBallDefaultHandleTouchRadius;
+        _backdropStyle = KSBallBackdropStyleAutomatic;
+        _backdropBlur = KSBallDefaultBackdropBlur;
         _shortcuts = [NSMutableArray array];
     }
     return self;
@@ -93,8 +97,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     copy.iconSpacing = self.iconSpacing;
     copy.ringSpacing = self.ringSpacing;
     copy.handleStyle = self.handleStyle;
+    copy.handleTouchRadius = self.handleTouchRadius;
     copy.backdropStyle = self.backdropStyle;
-    copy.backdropOpacity = self.backdropOpacity;
+    copy.backdropBlur = self.backdropBlur;
     for (KSBallShortcut *shortcut in self.shortcuts) {
         [copy.shortcuts addObject:[shortcut copy]];
     }
@@ -107,12 +112,13 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     self.iconSize = isfinite(self.iconSize) ? MIN(MAX(self.iconSize, KSBallMinimumIconSize), KSBallMaximumIconSize) : KSBallDefaultIconSize;
     self.iconSpacing = isfinite(self.iconSpacing) ? MIN(MAX(self.iconSpacing, KSBallMinimumIconSpacing), KSBallMaximumIconSpacing) : KSBallDefaultIconSpacing;
     self.ringSpacing = isfinite(self.ringSpacing) ? MIN(MAX(self.ringSpacing, KSBallMinimumRingSpacing), KSBallMaximumRingSpacing) : KSBallDefaultRingSpacing;
-    self.backdropOpacity = isfinite(self.backdropOpacity) ? MIN(MAX(self.backdropOpacity, KSBallMinimumBackdropOpacity), 1.0) : KSBallDefaultBackdropOpacity;
-    if (self.handleStyle < KSBallHandleStyleLight || self.handleStyle > KSBallHandleStyleHidden) {
-        self.handleStyle = KSBallHandleStyleLight;
+    self.backdropBlur = isfinite(self.backdropBlur) ? MIN(MAX(self.backdropBlur, KSBallMinimumBackdropBlur), 1.0) : KSBallDefaultBackdropBlur;
+    self.handleTouchRadius = isfinite(self.handleTouchRadius) ? MIN(MAX(self.handleTouchRadius, KSBallMinimumHandleTouchRadius), KSBallMaximumHandleTouchRadius) : KSBallDefaultHandleTouchRadius;
+    if (self.handleStyle < KSBallHandleStyleLight || self.handleStyle > KSBallHandleStyleAutomatic) {
+        self.handleStyle = KSBallHandleStyleAutomatic;
     }
-    if (self.backdropStyle < KSBallBackdropStyleLight || self.backdropStyle > KSBallBackdropStyleNone) {
-        self.backdropStyle = KSBallBackdropStyleDark;
+    if (self.backdropStyle < KSBallBackdropStyleLight || self.backdropStyle > KSBallBackdropStyleAutomatic) {
+        self.backdropStyle = KSBallBackdropStyleAutomatic;
     }
 
     NSMutableArray<KSBallShortcut *> *validShortcuts = [NSMutableArray array];
@@ -146,8 +152,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         @"iconSpacing": @(self.iconSpacing),
         @"ringSpacing": @(self.ringSpacing),
         @"handleStyle": @(self.handleStyle),
+        @"handleTouchRadius": @(self.handleTouchRadius),
         @"backdropStyle": @(self.backdropStyle),
-        @"backdropOpacity": @(self.backdropOpacity),
+        @"backdropBlur": @(self.backdropBlur),
         @"shortcuts": shortcuts,
     };
 }
@@ -169,8 +176,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     // 圈间距是独立的布局配置；旧设置中没有这一项时使用它自己的默认值。
     NSNumber *ringSpacing = number(@"ringSpacing");
     NSNumber *handleStyle = number(@"handleStyle");
+    NSNumber *handleTouchRadius = number(@"handleTouchRadius");
     NSNumber *backdropStyle = number(@"backdropStyle");
-    NSNumber *backdropOpacity = number(@"backdropOpacity");
+    NSNumber *backdropBlur = number(@"backdropBlur");
     if (enabled) settings.enabled = enabled.boolValue;
     if (edge) settings.edge = edge.integerValue;
     if (verticalPosition) settings.normalizedVerticalPosition = verticalPosition.doubleValue;
@@ -178,8 +186,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     if (iconSpacing) settings.iconSpacing = iconSpacing.doubleValue;
     if (ringSpacing) settings.ringSpacing = ringSpacing.doubleValue;
     if (handleStyle) settings.handleStyle = handleStyle.integerValue;
+    if (handleTouchRadius) settings.handleTouchRadius = handleTouchRadius.doubleValue;
     if (backdropStyle) settings.backdropStyle = backdropStyle.integerValue;
-    if (backdropOpacity) settings.backdropOpacity = backdropOpacity.doubleValue;
+    if (backdropBlur) settings.backdropBlur = backdropBlur.doubleValue;
 
     NSArray *shortcutDictionaries = [dictionary[@"shortcuts"] isKindOfClass:NSArray.class] ? dictionary[@"shortcuts"] : @[];
     for (id item in shortcutDictionaries) {

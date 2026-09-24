@@ -80,19 +80,23 @@
 
 - (void)testAppearancePersistsAndRejectsUnknownStyles {
     KSBallSettingsStore *store = [[KSBallSettingsStore alloc] initWithUserDefaults:self.defaults key:self.key];
+    XCTAssertEqual(store.settings.handleStyle, KSBallHandleStyleAutomatic);
+    XCTAssertEqual(store.settings.backdropStyle, KSBallBackdropStyleAutomatic);
     [store mutateSettings:^(KSBallSettings *settings) {
         settings.handleStyle = KSBallHandleStyleHidden;
         settings.backdropStyle = KSBallBackdropStyleLight;
-        settings.backdropOpacity = 0.0;
+        settings.backdropBlur = 0.0;
+        settings.handleTouchRadius = 500.0;
     }];
     KSBallSettingsStore *reloadedStore = [[KSBallSettingsStore alloc] initWithUserDefaults:self.defaults key:self.key];
     XCTAssertEqual(reloadedStore.settings.handleStyle, KSBallHandleStyleHidden);
     XCTAssertEqual(reloadedStore.settings.backdropStyle, KSBallBackdropStyleLight);
-    XCTAssertEqualWithAccuracy(reloadedStore.settings.backdropOpacity, KSBallMinimumBackdropOpacity, 0.001);
+    XCTAssertEqualWithAccuracy(reloadedStore.settings.backdropBlur, KSBallMinimumBackdropBlur, 0.001);
+    XCTAssertEqualWithAccuracy(reloadedStore.settings.handleTouchRadius, KSBallMaximumHandleTouchRadius, 0.001);
 
     KSBallSettings *invalid = [KSBallSettings settingsFromDictionary:@{@"handleStyle": @9, @"backdropStyle": @-3}];
-    XCTAssertEqual(invalid.handleStyle, KSBallHandleStyleLight);
-    XCTAssertEqual(invalid.backdropStyle, KSBallBackdropStyleDark);
+    XCTAssertEqual(invalid.handleStyle, KSBallHandleStyleAutomatic);
+    XCTAssertEqual(invalid.backdropStyle, KSBallBackdropStyleAutomatic);
 }
 
 @end

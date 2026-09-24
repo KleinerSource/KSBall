@@ -15,9 +15,10 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
 typedef NS_ENUM(NSInteger, KSBallAppearanceRow) {
     KSBallAppearanceRowHandleStyle = 0,
-    KSBallAppearanceRowBackdropStyle = 1,
-    KSBallAppearanceRowBackdropOpacity = 2,
-    KSBallAppearanceRowCount = 3,
+    KSBallAppearanceRowHandleTouchRadius = 1,
+    KSBallAppearanceRowBackdropStyle = 2,
+    KSBallAppearanceRowBackdropBlur = 3,
+    KSBallAppearanceRowCount = 4,
 };
 
 typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
@@ -32,6 +33,7 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
 @property (nonatomic, strong) HUDSceneCoordinator *hudSceneCoordinator;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, UIImage *> *listIconsByBundleIdentifier;
+@property (nonatomic) BOOL adjustingSlider;
 @end
 
 @implementation ConfigurationViewController
@@ -96,13 +98,18 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
         case KSBallConfigurationSectionHUD:
             return @"悬浮条位于屏幕边缘内侧。从悬浮条向内滑动展开扇形菜单，滑到图标上会显示名称并震动，松手即启动；在空白处松手则取消。长按不移动回到此设置页，长按后拖动可调整位置。锁屏界面会自动隐藏悬浮条。";
         case KSBallConfigurationSectionAppearance:
-            return @"悬浮条设为隐藏后，边缘的触摸区域仍然有效。毛玻璃覆盖整个屏幕，浓度越低越能看清背后的内容。调整时会实时预览。";
+            return @"“自动”跟随系统的浅色/深色模式。悬浮条设为隐藏后，边缘的触摸区域仍然有效；调整触摸半径时悬浮条旁会显示触摸区域。模糊程度控制毛玻璃的模糊强度，调整时会实时预览。";
         case KSBallConfigurationSectionLayout:
             return @"扇形菜单围绕悬浮条逐圈展开，每圈按屏幕可显示的范围和间距放下尽可能多的图标。同圈间距控制一圈内相邻图标的距离，圈间距控制两圈之间的距离。空间不足时会等比缩小图标。";
         case KSBallConfigurationSectionShortcuts:
             return @"排在前面的入口位于靠近悬浮条的内圈。编辑模式下可删除和排序。";
-        default:
-            return @"KSBall 只应通过 TrollStore 安装。私有能力不可用时，配置仍会保留。";
+        default: {
+            // 页面最底部显示版本号与开发者。
+            NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+            NSString *version = info[@"CFBundleShortVersionString"] ?: @"-";
+            NSString *build = info[@"CFBundleVersion"] ?: @"-";
+            return [NSString stringWithFormat:@"KSBall 只应通过 TrollStore 安装。私有能力不可用时，配置仍会保留。\n\nKSBall %@ (%@)\n开发者：KleinerSource", version, build];
+        }
     }
 }
 
@@ -147,46 +154,67 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
 
 - (UITableViewCell *)appearanceCellForRow:(NSInteger)row {
     KSBallSettings *settings = self.settingsStore.settings;
-    if (row == KSBallAppearanceRowBackdropOpacity) {
-        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"OpacityCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"OpacityCell"];
+    if (row == KSBallAppearanceRowHandleTouchRadius || row == KSBallAppearanceRowBackdropBlur) {
+        BOOL radiusRow = row == KSBallAppearanceRowHandleTouchRadius;
+        NSString *identifier = radiusRow ? @"TouchRadiusCell" : @"BlurCell";
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:identifier] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier];
         UISlider *slider = [cell.accessoryView isKindOfClass:UISlider.class] ? (UISlider *)cell.accessoryView : nil;
         if (!slider) {
             slider = [[UISlider alloc] initWithFrame:CGRectMake(0.0, 0.0, 150.0, 32.0)];
-            slider.minimumValue = KSBallMinimumBackdropOpacity;
-            slider.maximumValue = 1.0;
-            // 拖动时只刷新数值，松手后再写入设置，避免频繁同步到悬浮条。
-            [slider addTarget:self action:@selector(backdropOpacitySliderMoved:) forControlEvents:UIControlEventValueChanged];
-            [slider addTarget:self action:@selector(backdropOpacitySliderReleased:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel];
+            slider.minimumValue = radiusRow ? KSBallMinimumHandleTouchRadius : KSBallMinimumBackdropBlur;
+            slider.maximumValue = radiusRow ? KSBallMaximumHandleTouchRadius : 1.0;
+            slider.tag = row;
+            [slider addTarget:self action:@selector(appearanceSliderChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = slider;
         }
-        BOOL backdropEnabled = settings.backdropStyle != KSBallBackdropStyleNone;
-        slider.value = settings.backdropOpacity;
-        slider.enabled = backdropEnabled;
-        cell.textLabel.text = @"毛玻璃浓度";
-        cell.textLabel.enabled = backdropEnabled;
-        cell.detailTextLabel.text = [self percentageText:settings.backdropOpacity];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        if (radiusRow) {
+            slider.value = settings.handleTouchRadius;
+            cell.textLabel.text = @"触摸半径";
+            cell.detailTextLabel.text = [self touchRadiusText:settings.handleTouchRadius];
+            return cell;
+        }
+        BOOL backdropEnabled = settings.backdropStyle != KSBallBackdropStyleNone;
+        slider.value = settings.backdropBlur;
+        slider.enabled = backdropEnabled;
+        cell.textLabel.text = @"模糊程度";
+        cell.textLabel.enabled = backdropEnabled;
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", settings.backdropBlur * 100.0];
         return cell;
     }
 
     UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"StyleCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"StyleCell"];
     UISegmentedControl *segmentedControl = [cell.accessoryView isKindOfClass:UISegmentedControl.class] ? (UISegmentedControl *)cell.accessoryView : nil;
     if (!segmentedControl) {
-        segmentedControl = [[UISegmentedControl alloc] initWithFrame:CGRectMake(0.0, 0.0, 180.0, 32.0)];
+        segmentedControl = [[UISegmentedControl alloc] initWithFrame:CGRectMake(0.0, 0.0, 216.0, 32.0)];
         [segmentedControl addTarget:self action:@selector(appearanceStyleChanged:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = segmentedControl;
     }
     BOOL handleRow = row == KSBallAppearanceRowHandleStyle;
-    NSArray<NSString *> *titles = handleRow ? @[@"亮色", @"暗色", @"隐藏"] : @[@"亮色", @"暗色", @"无"];
+    NSArray<NSString *> *titles = handleRow ? @[@"自动", @"亮色", @"暗色", @"隐藏"] : @[@"自动", @"亮色", @"暗色", @"无"];
     [segmentedControl removeAllSegments];
     [titles enumerateObjectsUsingBlock:^(NSString * _Nonnull title, NSUInteger index, BOOL * _Nonnull stop) {
         [segmentedControl insertSegmentWithTitle:title atIndex:index animated:NO];
     }];
     segmentedControl.tag = row;
-    segmentedControl.selectedSegmentIndex = handleRow ? settings.handleStyle : settings.backdropStyle;
+    segmentedControl.selectedSegmentIndex = [self segmentIndexForStyle:handleRow ? settings.handleStyle : settings.backdropStyle];
     cell.textLabel.text = handleRow ? @"悬浮条" : @"毛玻璃";
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
+}
+
+// 分段控件把“自动”放在最前，枚举值为兼容旧设置则把它放在末尾，两者在这里互相换算。
+- (NSInteger)segmentIndexForStyle:(NSInteger)style {
+    return style == KSBallHandleStyleAutomatic ? 0 : style + 1;
+}
+
+- (NSInteger)styleForSegmentIndex:(NSInteger)index {
+    return index == 0 ? KSBallHandleStyleAutomatic : index - 1;
+}
+
+- (NSString *)touchRadiusText:(CGFloat)radius {
+    // 与悬浮条热区的计算保持一致：横向从屏幕边缘到可见条中心再加半径，纵向为可见条高度加上下两个半径。
+    return [NSString stringWithFormat:@"%.0f pt · 触摸区域 %.0f × %.0f pt", radius, 12.0 + radius, 36.0 + radius * 2.0];
 }
 
 - (UITableViewCell *)layoutCellForRow:(NSInteger)row {
@@ -315,27 +343,40 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
 }
 
 - (void)appearanceStyleChanged:(UISegmentedControl *)sender {
-    NSInteger selectedIndex = sender.selectedSegmentIndex;
+    NSInteger style = [self styleForSegmentIndex:sender.selectedSegmentIndex];
     BOOL handleRow = sender.tag == KSBallAppearanceRowHandleStyle;
     [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
         if (handleRow) {
-            settings.handleStyle = selectedIndex;
+            settings.handleStyle = style;
         } else {
-            settings.backdropStyle = selectedIndex;
+            settings.backdropStyle = style;
         }
     }];
 }
 
-- (void)backdropOpacitySliderMoved:(UISlider *)sender {
-    UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:KSBallAppearanceRowBackdropOpacity inSection:KSBallConfigurationSectionAppearance]];
-    cell.detailTextLabel.text = [self percentageText:sender.value];
-}
+// 拖动过程中实时写入设置，悬浮条会同步显示触摸范围或毛玻璃效果；
+// 只在数值跨过一个刻度时写入，避免每一帧都同步一次。
+- (void)appearanceSliderChanged:(UISlider *)sender {
+    BOOL radiusRow = sender.tag == KSBallAppearanceRowHandleTouchRadius;
+    CGFloat value = radiusRow ? round(sender.value) : round(sender.value * 20.0) / 20.0;
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:sender.tag inSection:KSBallConfigurationSectionAppearance];
+    UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+    cell.detailTextLabel.text = radiusRow ? [self touchRadiusText:value] : [NSString stringWithFormat:@"%.0f%%", value * 100.0];
 
-- (void)backdropOpacitySliderReleased:(UISlider *)sender {
-    CGFloat value = sender.value;
+    KSBallSettings *settings = self.settingsStore.settings;
+    CGFloat current = radiusRow ? settings.handleTouchRadius : settings.backdropBlur;
+    if (fabs(current - value) < 0.001) {
+        return;
+    }
+    self.adjustingSlider = sender.isTracking;
     [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
-        settings.backdropOpacity = value;
+        if (radiusRow) {
+            settings.handleTouchRadius = value;
+        } else {
+            settings.backdropBlur = value;
+        }
     }];
+    self.adjustingSlider = NO;
 }
 
 - (void)layoutMetricChanged:(UIStepper *)sender {
@@ -351,10 +392,6 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
 }
 
 #pragma mark - 辅助
-
-- (NSString *)percentageText:(CGFloat)value {
-    return [NSString stringWithFormat:@"%.0f%%", value * 100.0];
-}
 
 - (UIImage *)listIconForBundleIdentifier:(NSString *)bundleIdentifier {
     NSString *key = bundleIdentifier.lowercaseString;
@@ -376,6 +413,10 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
 }
 
 - (void)settingsDidChange:(NSNotification *)notification {
+    // 拖动滑块时重载表格会打断手势，数值标签已在拖动回调里更新。
+    if (self.adjustingSlider) {
+        return;
+    }
     [self.tableView reloadData];
 }
 

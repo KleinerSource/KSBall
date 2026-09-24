@@ -102,36 +102,32 @@
     }
 }
 
-- (void)testRingCapacitiesFollowAvailableArc {
+- (void)testRingCapacitiesGrowByTwoPerQuarter {
     CGRect safeBounds = [self safeBounds];
-    // 右下角为四分之一圆：内圈 3 个，外圈按弧长逐圈增多（40pt 图标、8pt 间距时为 3、4、6）。
+    // 右下角为四分之一圆：40pt 图标、8pt 间距时依次为 3、5、7。
     CGFloat scale = 0.0;
     NSArray<NSValue *> *cornerCenters = [self centersForCount:15 anchorY:800.0 edge:KSBallEdgeRight itemSize:40.0 itemSpacing:8.0 ringSpacing:8.0 scale:&scale];
     XCTAssertEqualWithAccuracy(scale, 1.0, 0.001);
     CGPoint cornerCenter = CGPointMake(CGRectGetMaxX(safeBounds) - 20.0, CGRectGetMaxY(safeBounds) - 20.0);
-    XCTAssertEqualObjects([self ringSizesOfCenters:cornerCenters aroundCenter:cornerCenter], (@[@3, @4, @6, @2]));
+    XCTAssertEqualObjects([self ringSizesOfCenters:cornerCenters aroundCenter:cornerCenter], (@[@3, @5, @7]));
 
-    // 屏幕中部为半圆，同样的半径下每圈容量约为四分之一圆的两倍。
+    // 屏幕中部为半圆，每圈容量为四分之一圆的两倍：5、9。
     CGFloat middle = CGRectGetMidY(safeBounds);
     NSArray<NSValue *> *middleCenters = [self centersForCount:14 anchorY:middle edge:KSBallEdgeLeft itemSize:40.0 itemSpacing:8.0 ringSpacing:8.0 scale:&scale];
     XCTAssertEqualWithAccuracy(scale, 1.0, 0.001);
     CGPoint middleCenter = CGPointMake(CGRectGetMinX(safeBounds) + 20.0, middle);
-    XCTAssertEqualObjects([self ringSizesOfCenters:middleCenters aroundCenter:middleCenter], (@[@5, @8, @1]));
+    XCTAssertEqualObjects([self ringSizesOfCenters:middleCenters aroundCenter:middleCenter], (@[@5, @9]));
 }
 
 - (void)testRingSpacingIsIndependentOfItemSpacing {
     CGRect safeBounds = [self safeBounds];
     CGFloat middle = CGRectGetMidY(safeBounds);
     CGPoint center = CGPointMake(CGRectGetMinX(safeBounds) + 20.0, middle);
-    NSArray<NSValue *> *tight = [self centersForCount:14 anchorY:middle edge:KSBallEdgeLeft itemSize:40.0 itemSpacing:8.0 ringSpacing:0.0 scale:NULL];
-    NSArray<NSValue *> *loose = [self centersForCount:14 anchorY:middle edge:KSBallEdgeLeft itemSize:40.0 itemSpacing:8.0 ringSpacing:24.0 scale:NULL];
-    // 内圈半径由同圈间距决定，两者相同；第二圈半径差正好等于圈间距之差。
-    CGPoint tightInner = tight.firstObject.CGPointValue;
-    CGPoint looseInner = loose.firstObject.CGPointValue;
-    XCTAssertEqualWithAccuracy(hypot(tightInner.x - center.x, tightInner.y - center.y), hypot(looseInner.x - center.x, looseInner.y - center.y), 0.01);
-    CGPoint tightOuter = tight[5].CGPointValue;
-    CGPoint looseOuter = loose[5].CGPointValue;
-    XCTAssertEqualWithAccuracy(hypot(looseOuter.x - center.x, looseOuter.y - center.y) - hypot(tightOuter.x - center.x, tightOuter.y - center.y), 24.0, 0.01);
+    // 圈间距足够大时不需要外推，第二圈半径正好比内圈多出一个图标尺寸加圈间距。
+    NSArray<NSValue *> *centers = [self centersForCount:14 anchorY:middle edge:KSBallEdgeLeft itemSize:40.0 itemSpacing:8.0 ringSpacing:30.0 scale:NULL];
+    CGPoint inner = centers.firstObject.CGPointValue;
+    CGPoint outer = centers[5].CGPointValue;
+    XCTAssertEqualWithAccuracy(hypot(outer.x - center.x, outer.y - center.y) - hypot(inner.x - center.x, inner.y - center.y), 70.0, 0.01);
 }
 
 - (NSArray<NSNumber *> *)ringSizesOfCenters:(NSArray<NSValue *> *)centers aroundCenter:(CGPoint)center {

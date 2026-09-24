@@ -13,25 +13,33 @@ FOUNDATION_EXPORT const CGFloat KSBallDefaultIconSpacing;
 FOUNDATION_EXPORT const CGFloat KSBallMinimumRingSpacing;
 FOUNDATION_EXPORT const CGFloat KSBallMaximumRingSpacing;
 FOUNDATION_EXPORT const CGFloat KSBallDefaultRingSpacing;
-FOUNDATION_EXPORT const CGFloat KSBallMinimumBackdropOpacity;
-FOUNDATION_EXPORT const CGFloat KSBallDefaultBackdropOpacity;
+FOUNDATION_EXPORT const CGFloat KSBallMinimumBackdropBlur;
+FOUNDATION_EXPORT const CGFloat KSBallDefaultBackdropBlur;
+FOUNDATION_EXPORT const CGFloat KSBallMinimumHandleTouchRadius;
+FOUNDATION_EXPORT const CGFloat KSBallMaximumHandleTouchRadius;
+FOUNDATION_EXPORT const CGFloat KSBallDefaultHandleTouchRadius;
 
 typedef NS_ENUM(NSInteger, KSBallEdge) {
     KSBallEdgeLeft = 0,
     KSBallEdgeRight = 1,
 };
 
+// 数值与已保存的设置兼容，新增的“自动”放在末尾。
 typedef NS_ENUM(NSInteger, KSBallHandleStyle) {
     KSBallHandleStyleLight = 0,
     KSBallHandleStyleDark = 1,
     /// 不绘制悬浮条，但边缘热区仍可滑出菜单。
     KSBallHandleStyleHidden = 2,
+    /// 跟随系统深色模式。
+    KSBallHandleStyleAutomatic = 3,
 };
 
 typedef NS_ENUM(NSInteger, KSBallBackdropStyle) {
     KSBallBackdropStyleLight = 0,
     KSBallBackdropStyleDark = 1,
     KSBallBackdropStyleNone = 2,
+    /// 跟随系统深色模式。
+    KSBallBackdropStyleAutomatic = 3,
 };
 
 @interface KSBallShortcut : NSObject <NSCopying>
@@ -57,8 +65,11 @@ typedef NS_ENUM(NSInteger, KSBallBackdropStyle) {
 /// 相邻两圈之间的间距。
 @property (nonatomic) CGFloat ringSpacing;
 @property (nonatomic) KSBallHandleStyle handleStyle;
+/// 悬浮条触摸热区在可见条四周向外扩展的距离。
+@property (nonatomic) CGFloat handleTouchRadius;
 @property (nonatomic) KSBallBackdropStyle backdropStyle;
-@property (nonatomic) CGFloat backdropOpacity;
+/// 毛玻璃的模糊程度，1 为系统材质的完整模糊。
+@property (nonatomic) CGFloat backdropBlur;
 @property (nonatomic, strong) NSMutableArray<KSBallShortcut *> *shortcuts;
 
 + (instancetype)defaultSettings;

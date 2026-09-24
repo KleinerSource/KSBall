@@ -11,16 +11,18 @@ static const CGFloat KSBallHandleEdgeInset = 10.0;
 static const CGFloat KSBallHandleBarWidth = 4.0;
 static const CGFloat KSBallHandleActiveBarWidth = 6.0;
 static const CGFloat KSBallHandleBarHeight = 36.0;
-// 触摸热区从屏幕边缘开始，远大于可见条，保证手指容易按到。
-static const CGFloat KSBallHandleTouchWidth = 52.0;
-static const CGFloat KSBallHandleTouchHeight = 120.0;
 // 可见条与屏幕上下边缘的最小距离，允许把悬浮条拖到四个角落；热区可以超出屏幕。
 static const CGFloat KSBallHandleVerticalInset = 10.0;
 static const CGFloat KSBallDragActivationDistance = 8.0;
 static const CGFloat KSBallPreviewIconSize = 108.0;
-// 配置变化后扇形菜单的预览停留时间。
+// 配置变化后扇形菜单与触摸范围的预览停留时间。
 static const NSTimeInterval KSBallMenuPreviewDuration = 1.6;
 static const char * const KSBallLockStateNotification = "com.apple.springboard.lockstate";
+
+typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
+    KSBallResolvedAppearanceLight,
+    KSBallResolvedAppearanceDark,
+};
 
 // 系统窗口托管按图层做命中测试：透明区域的触摸会直接落到下层应用。
 // 热区需要按不透明处理；纯展示用的图层则不能拦截触摸。
@@ -62,9 +64,13 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 @property (nonatomic, strong) KSBallSettingsStore *settingsStore;
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
 @property (nonatomic, strong) UIView *handleView;
+@property (nonatomic, strong) UIView *touchAreaView;
 @property (nonatomic, strong) UIView *barView;
 @property (nonatomic, strong) UIPanGestureRecognizer *panRecognizer;
 @property (nonatomic, strong) UIVisualEffectView *backdropView;
+// 暂停在指定进度的属性动画器，用来控制毛玻璃的模糊程度。
+@property (nonatomic, strong, nullable) UIViewPropertyAnimator *backdropAnimator;
+@property (nonatomic, copy, nullable) NSString *backdropEffectSignature;
 @property (nonatomic, strong) NSMutableArray<UIView *> *menuItemViews;
 @property (nonatomic, copy) NSArray<KSBallShortcut *> *menuShortcuts;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, UIImage *> *iconsByBundleIdentifier;
@@ -83,6 +89,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 @property (nonatomic) BOOL hasAppliedSettings;
 @property (nonatomic, copy) NSString *appliedMenuLayoutSignature;
 @property (nonatomic, copy) NSString *appliedBackdropSignature;
+@property (nonatomic) CGFloat appliedHandleTouchRadius;
 @property (nonatomic) BOOL dragging;
 @property (nonatomic) BOOL dragMoved;
 @property (nonatomic) CGPoint dragStartLocation;
@@ -119,6 +126,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     self.backdropView = [[UIVisualEffectView alloc] initWithEffect:nil];
     self.backdropView.userInteractionEnabled = NO;
     self.backdropView.hidden = YES;
+    self.backdropView.alpha = 0.0;
     self.backdropView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.backdropView.frame = self.view.bounds;
     [self.view addSubview:self.backdropView];
@@ -143,13 +151,21 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     self.previewNameLabel.alpha = 0.0;
     [self.view addSubview:self.previewNameLabel];
 
-    self.handleView = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, KSBallHandleTouchWidth, KSBallHandleTouchHeight)];
+    self.handleView = [[UIView alloc] initWithFrame:CGRectZero];
     // 几乎透明的底色加上按不透明命中，整个热区都能接住触摸而不会穿透到下层应用。
     self.handleView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.012];
     KSBallSetLayerHitTestsAsOpaque(self.handleView.layer, YES);
     self.handleView.isAccessibilityElement = YES;
     self.handleView.accessibilityLabel = @"KSBall 快捷菜单";
     [self.view addSubview:self.handleView];
+
+    self.touchAreaView = [UIView new];
+    self.touchAreaView.userInteractionEnabled = NO;
+    self.touchAreaView.backgroundColor = [UIColor.systemBlueColor colorWithAlphaComponent:0.22];
+    self.touchAreaView.layer.borderColor = [UIColor.systemBlueColor colorWithAlphaComponent:0.8].CGColor;
+    self.touchAreaView.layer.borderWidth = 1.0;
+    self.touchAreaView.alpha = 0.0;
+    [self.handleView addSubview:self.touchAreaView];
 
     self.barView = [UIView new];
     self.barView.userInteractionEnabled = NO;
@@ -200,6 +216,9 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [NSObject cancelPreviousPerformRequestsWithTarget:self];
+    if (_backdropAnimator.state == UIViewAnimatingStateActive) {
+        [_backdropAnimator stopAnimation:YES];
+    }
     if (_lockStateToken != NOTIFY_TOKEN_INVALID) {
         notify_cancel(_lockStateToken);
     }
@@ -217,12 +236,14 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     KSBallSettings *settings = self.settingsStore.settings;
     NSString *shortcutIdentifiers = [[settings.shortcuts valueForKey:@"bundleIdentifier"] componentsJoinedByString:@","];
     NSString *menuLayoutSignature = [NSString stringWithFormat:@"%.2f|%.2f|%.2f|%@", settings.iconSize, settings.iconSpacing, settings.ringSpacing, shortcutIdentifiers];
-    NSString *backdropSignature = [NSString stringWithFormat:@"%ld|%.2f", (long)settings.backdropStyle, settings.backdropOpacity];
+    NSString *backdropSignature = [NSString stringWithFormat:@"%ld|%.2f", (long)settings.backdropStyle, settings.backdropBlur];
     BOOL menuLayoutChanged = self.hasAppliedSettings && ![menuLayoutSignature isEqualToString:self.appliedMenuLayoutSignature];
     BOOL backdropChanged = self.hasAppliedSettings && ![backdropSignature isEqualToString:self.appliedBackdropSignature];
+    BOOL touchRadiusChanged = self.hasAppliedSettings && fabs(settings.handleTouchRadius - self.appliedHandleTouchRadius) > 0.01;
     self.hasAppliedSettings = YES;
     self.appliedMenuLayoutSignature = menuLayoutSignature;
     self.appliedBackdropSignature = backdropSignature;
+    self.appliedHandleTouchRadius = settings.handleTouchRadius;
 
     [self reloadIcons];
     // 用户正在滑动选择时不打断当前菜单。
@@ -230,6 +251,9 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         return;
     }
     [self layoutHandle];
+    if (touchRadiusChanged && !self.screenLocked) {
+        [self flashTouchArea];
+    }
     if ((menuLayoutChanged || backdropChanged) && !self.screenLocked && settings.shortcuts.count > 0) {
         // 调整毛玻璃时连同背景一起预览；其余情况不遮挡设置页。
         [self presentMenuPreviewWithBackdrop:backdropChanged];
@@ -304,37 +328,73 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 - (void)layoutHandle {
     KSBallEdge edge = [self currentEdge];
     CGFloat centerY = [self currentHandleCenterY];
-    CGFloat handleX = edge == KSBallEdgeLeft ? 0.0 : CGRectGetWidth(self.view.bounds) - KSBallHandleTouchWidth;
-    self.handleView.frame = CGRectMake(handleX, centerY - KSBallHandleTouchHeight / 2.0, KSBallHandleTouchWidth, KSBallHandleTouchHeight);
+    CGSize touchSize = [self handleTouchSize];
+    CGFloat handleX = edge == KSBallEdgeLeft ? 0.0 : CGRectGetWidth(self.view.bounds) - touchSize.width;
+    self.handleView.frame = CGRectMake(handleX, centerY - touchSize.height / 2.0, touchSize.width, touchSize.height);
+    self.touchAreaView.frame = self.handleView.bounds;
+    self.touchAreaView.layer.cornerRadius = MIN(touchSize.width, touchSize.height) / 2.0;
     [self layoutBar];
     [self refreshHitTargets];
+}
+
+// 触摸热区从屏幕边缘开始，横向延伸到可见条中心外 radius 处，纵向在可见条上下各延伸 radius。
+- (CGSize)handleTouchSize {
+    CGFloat radius = self.settingsStore.settings.handleTouchRadius;
+    return CGSizeMake(KSBallHandleEdgeInset + KSBallHandleBarWidth / 2.0 + radius, KSBallHandleBarHeight + radius * 2.0);
 }
 
 - (void)layoutBar {
     BOOL active = self.menuVisible || self.dragging;
     CGFloat barWidth = active ? KSBallHandleActiveBarWidth : KSBallHandleBarWidth;
-    CGFloat barX = [self currentEdge] == KSBallEdgeLeft ? KSBallHandleEdgeInset : KSBallHandleTouchWidth - KSBallHandleEdgeInset - barWidth;
-    self.barView.frame = CGRectMake(barX, (KSBallHandleTouchHeight - KSBallHandleBarHeight) / 2.0, barWidth, KSBallHandleBarHeight);
+    CGFloat touchWidth = CGRectGetWidth(self.handleView.bounds);
+    CGFloat barCenterInset = KSBallHandleEdgeInset + KSBallHandleBarWidth / 2.0;
+    CGFloat barX = [self currentEdge] == KSBallEdgeLeft ? barCenterInset - barWidth / 2.0 : touchWidth - barCenterInset - barWidth / 2.0;
+    self.barView.frame = CGRectMake(barX, (CGRectGetHeight(self.handleView.bounds) - KSBallHandleBarHeight) / 2.0, barWidth, KSBallHandleBarHeight);
     self.barView.layer.cornerRadius = barWidth / 2.0;
-    switch (self.settingsStore.settings.handleStyle) {
-        case KSBallHandleStyleDark:
-            self.barView.hidden = NO;
-            self.barView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:active ? 0.9 : 0.7];
-            self.barView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.25].CGColor;
-            break;
-        case KSBallHandleStyleHidden:
-            // 隐藏时热区仍然有效；拖动调整位置期间临时显示，便于看清落点。
-            self.barView.hidden = !self.dragging;
-            self.barView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.9];
-            self.barView.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.18].CGColor;
-            break;
-        case KSBallHandleStyleLight:
-        default:
-            self.barView.hidden = NO;
-            self.barView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:active ? 0.98 : 0.8];
-            self.barView.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.18].CGColor;
-            break;
+
+    KSBallHandleStyle style = self.settingsStore.settings.handleStyle;
+    // 隐藏时热区仍然有效；拖动调整位置期间临时显示，便于看清落点。
+    self.barView.hidden = style == KSBallHandleStyleHidden && !self.dragging;
+    BOOL dark = style == KSBallHandleStyleDark || (style == KSBallHandleStyleAutomatic && [self systemAppearance] == KSBallResolvedAppearanceDark);
+    if (dark) {
+        self.barView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:active ? 0.9 : 0.7];
+        self.barView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.25].CGColor;
+    } else {
+        self.barView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:active ? 0.98 : 0.8];
+        self.barView.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.18].CGColor;
     }
+}
+
+// HUD 窗口不在任何场景里，优先读屏幕的特征集合来判断系统是否处于深色模式。
+- (KSBallResolvedAppearance)systemAppearance {
+    UIUserInterfaceStyle style = UIScreen.mainScreen.traitCollection.userInterfaceStyle;
+    if (style == UIUserInterfaceStyleUnspecified) {
+        style = self.traitCollection.userInterfaceStyle;
+    }
+    return style == UIUserInterfaceStyleDark ? KSBallResolvedAppearanceDark : KSBallResolvedAppearanceLight;
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    [self layoutBar];
+    if (self.backdropRequested) {
+        [self applyBackdropEffect];
+    }
+}
+
+// 调整触摸半径时在悬浮条周围短暂显示热区范围。
+- (void)flashTouchArea {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(hideTouchArea) object:nil];
+    [UIView animateWithDuration:0.12 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        self.touchAreaView.alpha = 1.0;
+    } completion:nil];
+    [self performSelector:@selector(hideTouchArea) withObject:nil afterDelay:KSBallMenuPreviewDuration];
+}
+
+- (void)hideTouchArea {
+    [UIView animateWithDuration:0.25 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        self.touchAreaView.alpha = 0.0;
+    } completion:nil];
 }
 
 - (CGPoint)barCenter {
@@ -431,9 +491,17 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 
 #pragma mark - 毛玻璃背景
 
+- (KSBallResolvedAppearance)resolvedBackdropAppearance {
+    KSBallBackdropStyle style = self.settingsStore.settings.backdropStyle;
+    if (style == KSBallBackdropStyleAutomatic) {
+        return [self systemAppearance];
+    }
+    return style == KSBallBackdropStyleLight ? KSBallResolvedAppearanceLight : KSBallResolvedAppearanceDark;
+}
+
 - (void)showBackdrop {
     KSBallSettings *settings = self.settingsStore.settings;
-    BOOL lightBackdrop = settings.backdropStyle == KSBallBackdropStyleLight;
+    BOOL lightBackdrop = settings.backdropStyle != KSBallBackdropStyleNone && [self resolvedBackdropAppearance] == KSBallResolvedAppearanceLight;
     // 亮色背景上用深色文字，其余情况保持白字加阴影。
     self.previewNameLabel.textColor = lightBackdrop ? UIColor.blackColor : UIColor.whiteColor;
     self.previewNameLabel.layer.shadowOpacity = lightBackdrop ? 0.0 : 0.5;
@@ -442,13 +510,44 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         return;
     }
     self.backdropRequested = YES;
-    UIBlurEffect *effect = [UIBlurEffect effectWithStyle:lightBackdrop ? UIBlurEffectStyleSystemThinMaterialLight : UIBlurEffectStyleSystemThinMaterialDark];
-    // 收起动画可能还在进行，直接重新淡入。透明度通过视图 alpha 控制毛玻璃的浓淡。
+    [self applyBackdropEffect];
+    // 收起动画可能还在进行，直接从当前状态重新淡入。
     self.backdropView.hidden = NO;
     [UIView animateWithDuration:0.22 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
-        self.backdropView.effect = effect;
-        self.backdropView.alpha = settings.backdropOpacity;
+        self.backdropView.alpha = 1.0;
     } completion:nil];
+}
+
+// 模糊程度通过暂停在指定进度的属性动画器实现：进度 0 为无模糊，1 为系统材质的完整模糊。
+// 只调视图 alpha 会让毛玻璃整体变淡而不是变得更清晰。
+- (void)applyBackdropEffect {
+    KSBallSettings *settings = self.settingsStore.settings;
+    KSBallResolvedAppearance appearance = [self resolvedBackdropAppearance];
+    NSString *signature = [NSString stringWithFormat:@"%ld|%.3f", (long)appearance, settings.backdropBlur];
+    if (self.backdropAnimator && [signature isEqualToString:self.backdropEffectSignature]) {
+        return;
+    }
+    [self stopBackdropAnimator];
+    UIBlurEffect *effect = [UIBlurEffect effectWithStyle:appearance == KSBallResolvedAppearanceLight ? UIBlurEffectStyleSystemMaterialLight : UIBlurEffectStyleSystemMaterialDark];
+    UIVisualEffectView *backdropView = self.backdropView;
+    backdropView.effect = nil;
+    UIViewPropertyAnimator *animator = [[UIViewPropertyAnimator alloc] initWithDuration:1.0 curve:UIViewAnimationCurveLinear animations:^{
+        backdropView.effect = effect;
+    }];
+    animator.pausesOnCompletion = YES;
+    [animator pauseAnimation];
+    animator.fractionComplete = settings.backdropBlur;
+    self.backdropAnimator = animator;
+    self.backdropEffectSignature = signature;
+}
+
+- (void)stopBackdropAnimator {
+    // 暂停中的动画器必须先停止才能释放，否则 UIKit 会抛出异常。
+    if (self.backdropAnimator.state == UIViewAnimatingStateActive) {
+        [self.backdropAnimator stopAnimation:YES];
+    }
+    self.backdropAnimator = nil;
+    self.backdropEffectSignature = nil;
 }
 
 - (void)hideBackdropAnimated:(BOOL)animated {
@@ -457,7 +556,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         return;
     }
     void (^changes)(void) = ^{
-        self.backdropView.effect = nil;
+        self.backdropView.alpha = 0.0;
     };
     void (^completion)(BOOL) = ^(BOOL finished) {
         // 动画期间可能已重新请求背景，此时保持显示。

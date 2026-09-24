@@ -109,7 +109,8 @@ static const NSUInteger KSBallFanMaximumShrinkAttempts = 16;
         // 目标是每向外一圈多放 2 个（按四分之一圆计，即 3、5、7、9……，半圆为 5、9、13……）。
         // 按圈间距排出的半径往往差一点点放不下，这时把这一圈再向外推，最多推半个圈距；
         // 推得动就按目标数量排，推不动（屏幕边界或间距太大）就按实际能放下的数量排。
-        if (ring > 0) {
+        // 最后一圈图标不够填满时不必外推。
+        if (ring > 0 && remaining > capacity) {
             CGFloat quarterFraction = (upperAngle - lowerAngle) / M_PI_2;
             NSUInteger target = (NSUInteger)lround((2.0 + 2.0 * ring) * quarterFraction) + 1;
             if (capacity < target && target > 1) {
