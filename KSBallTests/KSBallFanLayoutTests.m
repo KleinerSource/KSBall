@@ -14,7 +14,8 @@
         NSUInteger count = countValue.unsignedIntegerValue;
         for (NSNumber *edgeValue in @[@(KSBallEdgeLeft), @(KSBallEdgeRight)]) {
             for (NSNumber *biasValue in @[@(KSBallFanBiasUpper), @(KSBallFanBiasCenter), @(KSBallFanBiasLower)]) {
-                CGPoint anchor = CGPointMake(edgeValue.integerValue == KSBallEdgeLeft ? 36.0 : 354.0, 405.0);
+                // 与 FloatingHUDViewController 一致：扇形圆心位于安全区边缘内收 20pt 处，紧邻贴边悬浮条。
+                CGPoint anchor = CGPointMake(edgeValue.integerValue == KSBallEdgeLeft ? CGRectGetMinX(safeBounds) + 20.0 : CGRectGetMaxX(safeBounds) - 20.0, 405.0);
                 NSArray<NSValue *> *centers = [KSBallFanLayout centersForItemCount:count anchorCenter:anchor safeBounds:safeBounds edge:edgeValue.integerValue bias:biasValue.integerValue];
                 XCTAssertEqual(centers.count, count);
                 for (NSValue *value in centers) {

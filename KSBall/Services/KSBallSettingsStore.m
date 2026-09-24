@@ -1,14 +1,19 @@
 #import "KSBallSettingsStore.h"
 #import "KSBallSharedStorage.h"
+#import <notify.h>
 
 NSNotificationName const KSBallSettingsDidChangeNotification = @"KSBallSettingsDidChangeNotification";
 static NSString * const KSBallSettingsDefaultsKey = @"KSBall.Settings";
+// 主程序与 HUD 子进程通过共享文件保存设置，用 Darwin 通知互相告知变更。
+static const char * const KSBallSettingsDarwinNotification = "com.kleinersource.ksball.settings-changed";
 
 @interface KSBallSettingsStore ()
 @property (nonatomic, strong) NSUserDefaults *userDefaults;
 @property (nonatomic, copy) NSString *defaultsKey;
 @property (nonatomic, copy, nullable) NSString *sharedStorageKey;
 @property (nonatomic, copy, readwrite) KSBallSettings *settings;
+@property (nonatomic, copy, nullable) NSData *lastSyncedData;
+@property (nonatomic) int externalChangeToken;
 - (instancetype)initWithUserDefaults:(NSUserDefaults *)userDefaults key:(NSString *)key sharedStorageKey:(nullable NSString *)sharedStorageKey;
 @end
 
@@ -33,9 +38,32 @@ static NSString * const KSBallSettingsDefaultsKey = @"KSBall.Settings";
         _userDefaults = userDefaults;
         _defaultsKey = [key copy];
         _sharedStorageKey = [sharedStorageKey copy];
+        _externalChangeToken = NOTIFY_TOKEN_INVALID;
         [self reload];
+        if (_sharedStorageKey) {
+            __weak typeof(self) weakSelf = self;
+            notify_register_dispatch(KSBallSettingsDarwinNotification, &_externalChangeToken, dispatch_get_main_queue(), ^(int token) {
+                [weakSelf handleExternalChange];
+            });
+        }
     }
     return self;
+}
+
+- (void)dealloc {
+    if (_externalChangeToken != NOTIFY_TOKEN_INVALID) {
+        notify_cancel(_externalChangeToken);
+    }
+}
+
+- (void)handleExternalChange {
+    NSData *data = [KSBallSharedStorage dataForKey:self.sharedStorageKey];
+    // 自己写入后也会收到通知；内容未变化时忽略，避免重复刷新界面。
+    if (!data || [data isEqualToData:self.lastSyncedData]) {
+        return;
+    }
+    [self reload];
+    [[NSNotificationCenter defaultCenter] postNotificationName:KSBallSettingsDidChangeNotification object:self];
 }
 
 - (void)reload {
@@ -52,10 +80,13 @@ static NSString * const KSBallSettingsDefaultsKey = @"KSBall.Settings";
         }
     }
     self.settings = [KSBallSettings settingsFromDictionary:dictionary];
-    if (self.sharedStorageKey && !hasSharedData) {
+    if (hasSharedData) {
+        self.lastSyncedData = data;
+    } else if (self.sharedStorageKey) {
         NSData *sharedData = [NSJSONSerialization dataWithJSONObject:self.settings.dictionaryRepresentation options:0 error:nil];
         if (sharedData) {
             [KSBallSharedStorage setData:sharedData forKey:self.sharedStorageKey];
+            self.lastSyncedData = sharedData;
         }
     }
 }
@@ -68,8 +99,9 @@ static NSString * const KSBallSettingsDefaultsKey = @"KSBall.Settings";
     NSData *data = [NSJSONSerialization dataWithJSONObject:dictionary options:0 error:nil];
     if (data) {
         [self.userDefaults setObject:data forKey:self.defaultsKey];
-        if (self.sharedStorageKey) {
-            [KSBallSharedStorage setData:data forKey:self.sharedStorageKey];
+        if (self.sharedStorageKey && [KSBallSharedStorage setData:data forKey:self.sharedStorageKey]) {
+            self.lastSyncedData = data;
+            notify_post(KSBallSettingsDarwinNotification);
         }
     }
     [[NSNotificationCenter defaultCenter] postNotificationName:KSBallSettingsDidChangeNotification object:self];

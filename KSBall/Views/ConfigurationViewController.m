@@ -35,6 +35,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     self.tableView.allowsSelectionDuringEditing = YES;
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"编辑" style:UIBarButtonItemStylePlain target:self action:@selector(toggleEditing)];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(settingsDidChange:) name:KSBallSettingsDidChangeNotification object:self.settingsStore];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationDidBecomeActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
 }
 
 - (void)dealloc {
@@ -63,7 +64,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     switch (section) {
-        case KSBallConfigurationSectionHUD: return @"悬浮球";
+        case KSBallConfigurationSectionHUD: return @"悬浮条";
         case KSBallConfigurationSectionLayout: return @"菜单布局";
         case KSBallConfigurationSectionShortcuts: return [NSString stringWithFormat:@"快捷应用（%lu/%lu）", (unsigned long)self.settingsStore.settings.shortcuts.count, (unsigned long)KSBallMaximumShortcuts];
         case KSBallConfigurationSectionSupport: return @"系统能力";
@@ -73,10 +74,10 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (section == KSBallConfigurationSectionHUD) {
-        return @"启动一次后，HUD 会在跨应用切换时保持显示。长按不移动可随时回到此设置页；长按后拖动可调整悬浮球位置。";
+        return @"悬浮条贴在屏幕边缘。点按或向内滑动展开扇形菜单，滑到图标上松手即可启动；长按不移动回到此设置页，长按后拖动可调整位置。";
     }
     if (section == KSBallConfigurationSectionLayout) {
-        return @"长按后拖动悬浮球会保存左右边缘和纵向位置；菜单始终向屏幕内侧展开。";
+        return @"拖动悬浮条越过屏幕中线会切换到另一侧；菜单始终向屏幕内侧展开。";
     }
     if (section == KSBallConfigurationSectionShortcuts) {
         return @"前 8 个入口位于内圈，后 8 个入口位于外圈。编辑模式下可删除和排序。";
@@ -87,7 +88,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.section == KSBallConfigurationSectionHUD && indexPath.row == 0) {
         UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"HUDCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"HUDCell"];
-        cell.textLabel.text = @"启用全局悬浮球";
+        cell.textLabel.text = @"启用全局悬浮条";
         UISwitch *toggle = [cell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)cell.accessoryView : nil;
         if (!toggle) {
             toggle = [UISwitch new];
@@ -102,7 +103,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
     if (indexPath.section == KSBallConfigurationSectionHUD) {
         UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"RebuildHUDCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"RebuildHUDCell"];
-        cell.textLabel.text = @"重新创建悬浮球";
+        cell.textLabel.text = @"重新创建悬浮条";
         cell.detailTextLabel.text = self.hudSceneCoordinator.isHUDActive ? @"已显示" : @"立即重试";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         return cell;
@@ -144,7 +145,7 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"SupportCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"SupportCell"];
     cell.textLabel.text = self.applicationBridge.isAvailable ? @"LaunchServices 可用" : @"LaunchServices 不可用";
-    cell.detailTextLabel.text = self.applicationBridge.isAvailable ? self.hudSceneCoordinator.frontBoardStatusDescription : self.applicationBridge.unavailabilityReason;
+    cell.detailTextLabel.text = self.applicationBridge.isAvailable ? self.hudSceneCoordinator.statusDescription : self.applicationBridge.unavailabilityReason;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
 }
@@ -214,6 +215,11 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
 }
 
 - (void)settingsDidChange:(NSNotification *)notification {
+    [self.tableView reloadData];
+}
+
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+    [self.settingsStore reload];
     [self.tableView reloadData];
 }
 

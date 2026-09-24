@@ -2,25 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>BSServiceDomains</key>
-    <dict>
-        <key>com.apple.frontboard</key>
-        <dict>
-            <key>DerivedServiceRestrictions</key>
-            <array>
-                <string>com.apple.uis.applicationStateService</string>
-                <string>com.apple.uis.applicationSupportService</string>
-                <string>com.apple.frontboard.layout-monitor</string>
-            </array>
-            <key>Services</key>
-            <dict>
-                <key>com.apple.frontboard.system-service</key>
-                <dict/>
-                <key>com.apple.frontboard.workspace-service</key>
-                <dict/>
-            </dict>
-        </dict>
-    </dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>zh-Hans</string>
     <key>CFBundleDisplayName</key>
@@ -58,35 +39,10 @@
     <true/>
     <key>MinimumOSVersion</key>
     <string>15.0</string>
-    <key>UIApplicationSceneManifest</key>
-    <dict>
-        <key>UIApplicationSupportsMultipleScenes</key>
-        <true/>
-        <key>UISceneConfigurations</key>
-        <dict>
-            <key>UIWindowSceneSessionRoleApplication</key>
-            <array>
-                <dict>
-                    <key>UISceneConfigurationName</key>
-                    <string>Default Configuration</string>
-                    <key>UISceneDelegateClassName</key>
-                    <string>SceneDelegate</string>
-                </dict>
-                <dict>
-                    <key>UISceneConfigurationName</key>
-                    <string>HUDScene</string>
-                    <key>UISceneDelegateClassName</key>
-                    <string>HUDSceneDelegate</string>
-                </dict>
-                <dict>
-                    <key>UISceneConfigurationName</key>
-                    <string>KeepScene</string>
-                    <key>UISceneDelegateClassName</key>
-                    <string>KeepSceneDelegate</string>
-                </dict>
-            </array>
-        </dict>
-    </dict>
+    <key>UIApplicationSystemWindowsSecureKey</key>
+    <true/>
+    <key>UILaunchScreen</key>
+    <dict/>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
     <key>UISupportedInterfaceOrientations</key>

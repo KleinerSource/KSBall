@@ -10,10 +10,13 @@
 
 typedef struct __IOHIDEvent *KSBallIOHIDEventRef;
 typedef struct __IOHIDService *KSBallIOHIDServiceRef;
+// 与小端平台上 MacTypes 的 AbsoluteTime（UnsignedWide）布局一致：低 32 位在前。
 typedef struct {
-    uint32_t hi;
     uint32_t lo;
+    uint32_t hi;
 } KSBallAbsoluteTime;
+
+NSNotificationName const KSBallHUDOutsideTouchNotification = @"KSBallHUDOutsideTouchNotification";
 
 typedef KSBallIOHIDEventRef (*KSBallCreateDigitizerEventFunction)(CFAllocatorRef, KSBallAbsoluteTime, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, double, double, double, double, double, Boolean, Boolean, uint32_t);
 typedef KSBallIOHIDEventRef (*KSBallCreateFingerEventFunction)(CFAllocatorRef, KSBallAbsoluteTime, uint32_t, uint32_t, uint32_t, double, double, double, double, double, double, double, double, double, double, Boolean, Boolean, uint32_t);
@@ -83,6 +86,9 @@ typedef void *(*KSBallRegisterHIDEventCallbackFunction)(KSBallHIDEventCallback);
 @end
 
 static NSMutableDictionary<NSNumber *, UITouch *> *KSBallActiveTouches;
+static NSMutableArray<UITouch *> *KSBallLivingTouches;
+static NSMutableArray<UITouch *> *KSBallTouchesToRemove;
+static NSMutableArray<UITouch *> *KSBallTouchesToStationarify;
 static NSArray<UITouch *> *KSBallSafeTouches;
 static CFRunLoopSourceRef KSBallTouchEventSource;
 static void *KSBallIOKitHandle;
@@ -109,7 +115,9 @@ static KSBallIOHIDEventRef KSBallCreateHIDEventForTouch(UITouch *touch) {
     }
 
     uint64_t absoluteTime = mach_absolute_time();
-    KSBallAbsoluteTime timestamp = { (uint32_t)(absoluteTime >> 32), (uint32_t)absoluteTime };
+    KSBallAbsoluteTime timestamp;
+    timestamp.hi = (uint32_t)(absoluteTime >> 32);
+    timestamp.lo = (uint32_t)absoluteTime;
     KSBallIOHIDEventRef handEvent = KSBallCreateDigitizerEvent(kCFAllocatorDefault, timestamp, 3, 0, 0, 1 << 1, 0, 0, 0, 0, 0, 0, false, true, 0);
     if (!handEvent) {
         return NULL;
@@ -136,37 +144,55 @@ static void KSBallTouchEventSourceCallback(void *context) {
         return;
     }
 
+    // 已结束的触摸与刚开始的触摸在下一次 HID 事件到达时再处理，确保 UIKit 至少完整看到一次每个阶段。
     [event _clearTouches];
     NSArray<UITouch *> *touches = KSBallSafeTouches;
     for (UITouch *touch in touches) {
+        switch (touch.phase) {
+            case UITouchPhaseEnded:
+            case UITouchPhaseCancelled:
+                [KSBallTouchesToRemove addObject:touch];
+                break;
+            case UITouchPhaseBegan:
+                [KSBallTouchesToStationarify addObject:touch];
+                break;
+            default:
+                break;
+        }
         [event _addTouch:touch forDelayedDelivery:NO];
     }
     [application sendEvent:event];
-
-    for (UITouch *touch in touches) {
-        if (touch.phase == UITouchPhaseEnded || touch.phase == UITouchPhaseCancelled) {
-            for (NSNumber *identifier in KSBallActiveTouches.allKeys) {
-                if (KSBallActiveTouches[identifier] == touch) {
-                    [KSBallActiveTouches removeObjectForKey:identifier];
-                    break;
-                }
-            }
-        } else if (touch.phase == UITouchPhaseBegan) {
-            [touch setPhaseAndUpdateTimestamp:UITouchPhaseStationary];
-        }
-    }
-    KSBallSafeTouches = KSBallActiveTouches.allValues;
 }
 
 static void KSBallReceiveTouch(NSInteger identifier, CGPoint location, UITouchPhase phase, UIWindow *window, UIView *view) {
-    if (!KSBallActiveTouches) {
-        KSBallActiveTouches = [NSMutableDictionary dictionary];
+    BOOL touchesChanged = NO;
+    for (UITouch *touch in KSBallTouchesToRemove) {
+        [KSBallLivingTouches removeObjectIdenticalTo:touch];
+        for (NSNumber *touchKey in KSBallActiveTouches.allKeys) {
+            if (KSBallActiveTouches[touchKey] == touch) {
+                [KSBallActiveTouches removeObjectForKey:touchKey];
+            }
+        }
+        touchesChanged = YES;
     }
+    [KSBallTouchesToRemove removeAllObjects];
+    for (UITouch *touch in KSBallTouchesToStationarify) {
+        if (touch.phase == UITouchPhaseBegan) {
+            [touch setPhaseAndUpdateTimestamp:UITouchPhaseStationary];
+        }
+    }
+    [KSBallTouchesToStationarify removeAllObjects];
 
     NSNumber *touchKey = @(identifier);
     UITouch *touch = KSBallActiveTouches[touchKey];
-    if (!touch) {
-        if (phase == UITouchPhaseEnded || phase == UITouchPhaseCancelled || !view) {
+    BOOL living = touch && [KSBallLivingTouches indexOfObjectIdenticalTo:touch] != NSNotFound;
+    if (!living) {
+        // 只在按下时建立新触摸；从 HUD 外滑入的手指不应在悬浮条上凭空产生点击。
+        if (phase != UITouchPhaseBegan) {
+            return;
+        }
+        if (!view) {
+            [[NSNotificationCenter defaultCenter] postNotificationName:KSBallHUDOutsideTouchNotification object:nil];
             return;
         }
         touch = [[UITouch alloc] initKSBallAtPoint:location inWindow:window onView:view];
@@ -178,13 +204,21 @@ static void KSBallReceiveTouch(NSInteger identifier, CGPoint location, UITouchPh
             [touch _setHidEvent:hidEvent];
             CFRelease(hidEvent);
         }
+        [KSBallLivingTouches addObject:touch];
         KSBallActiveTouches[touchKey] = touch;
+        touchesChanged = YES;
     } else {
+        // Began 尚未派发时丢弃移动事件，否则 UIKit 永远收不到 Began，手势识别会失效。
+        if (touch.phase == UITouchPhaseBegan && phase == UITouchPhaseMoved) {
+            return;
+        }
         [touch setLocationInWindow:location];
-        [touch setPhaseAndUpdateTimestamp:phase];
     }
+    [touch setPhaseAndUpdateTimestamp:phase];
 
-    KSBallSafeTouches = KSBallActiveTouches.allValues;
+    if (touchesChanged) {
+        KSBallSafeTouches = [KSBallLivingTouches copy];
+    }
     if (KSBallTouchEventSource) {
         CFRunLoopSourceSignal(KSBallTouchEventSource);
         CFRunLoopWakeUp(CFRunLoopGetMain());
@@ -262,17 +296,9 @@ static void KSBallHandleHIDEvent(void *target, void *refcon, KSBallIOHIDServiceR
         dispatch_async(dispatch_get_main_queue(), ^{
             UIWindow *window = nil;
             for (UIWindow *candidate in UIApplication.sharedApplication.windows) {
-                if ([candidate isKindOfClass:PassthroughHUDWindow.class] && !candidate.hidden && !candidate.windowScene) {
+                if ([candidate isKindOfClass:PassthroughHUDWindow.class] && !candidate.hidden) {
                     window = candidate;
                     break;
-                }
-            }
-            if (!window) {
-                for (UIWindow *candidate in UIApplication.sharedApplication.windows) {
-                    if ([candidate isKindOfClass:PassthroughHUDWindow.class] && !candidate.hidden) {
-                        window = candidate;
-                        break;
-                    }
                 }
             }
             if (!window) {
@@ -295,6 +321,9 @@ BOOL KSBallRegisterHUDEventCallback(void) {
     }
 
     KSBallActiveTouches = [NSMutableDictionary dictionary];
+    KSBallLivingTouches = [NSMutableArray array];
+    KSBallTouchesToRemove = [NSMutableArray array];
+    KSBallTouchesToStationarify = [NSMutableArray array];
     KSBallSafeTouches = @[];
     CFRunLoopSourceContext context = {0};
     context.perform = KSBallTouchEventSourceCallback;

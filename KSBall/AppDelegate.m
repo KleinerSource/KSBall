@@ -1,27 +1,22 @@
 #import "AppDelegate.h"
+#import "ConfigurationViewController.h"
 #import "HUDSceneCoordinator.h"
+#import "KSBallSettingsStore.h"
+#import "SystemApplicationBridge.h"
 
 @implementation AppDelegate
 
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        [HUDSceneCoordinator.sharedCoordinator bootstrapHUDProcessIfNeeded];
-    }
-    return self;
-}
-
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    HUDSceneCoordinator *coordinator = HUDSceneCoordinator.sharedCoordinator;
-    if (KSBallIsHUDProcess()) {
-        [coordinator prepareHUDProcessForLaunch];
-    }
+    ConfigurationViewController *configuration = [[ConfigurationViewController alloc] initWithSettingsStore:KSBallSettingsStore.sharedStore applicationBridge:SystemApplicationBridge.new hudSceneCoordinator:HUDSceneCoordinator.sharedCoordinator];
+    self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    self.window.rootViewController = [[UINavigationController alloc] initWithRootViewController:configuration];
+    [self.window makeKeyAndVisible];
+    [HUDSceneCoordinator.sharedCoordinator activateHUD];
     return YES;
 }
 
-- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options {
-    NSString *configurationName = KSBallIsHUDProcess() ? @"KeepScene" : @"Default Configuration";
-    return [[UISceneConfiguration alloc] initWithName:configurationName sessionRole:connectingSceneSession.role];
+- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey, id> *)options {
+    return [url.scheme isEqualToString:@"ksball"];
 }
 
 @end

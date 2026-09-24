@@ -9,9 +9,6 @@
 /* Begin PBXBuildFile section */
 		A00000000000000000000200 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* main.m */; };
 		A00000000000000000000201 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000103 /* AppDelegate.m */; };
-		A00000000000000000000202 /* SceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105 /* SceneDelegate.m */; };
-		A00000000000000000000203 /* HUDSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000107 /* HUDSceneDelegate.m */; };
-		A00000000000000000000204 /* KeepSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* KeepSceneDelegate.m */; };
 		A00000000000000000000205 /* KSBallSettings.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000121 /* KSBallSettings.m */; };
 		A00000000000000000000206 /* KSBallSettingsStore.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000123 /* KSBallSettingsStore.m */; };
 		A00000000000000000000207 /* SystemApplicationBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000131 /* SystemApplicationBridge.m */; };
@@ -45,12 +42,6 @@
 		A00000000000000000000101 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		A00000000000000000000102 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		A00000000000000000000103 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
-		A00000000000000000000104 /* SceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDelegate.h; sourceTree = "<group>"; };
-		A00000000000000000000105 /* SceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SceneDelegate.m; sourceTree = "<group>"; };
-		A00000000000000000000106 /* HUDSceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HUDSceneDelegate.h; sourceTree = "<group>"; };
-		A00000000000000000000107 /* HUDSceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HUDSceneDelegate.m; sourceTree = "<group>"; };
-		A00000000000000000000108 /* KeepSceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KeepSceneDelegate.h; sourceTree = "<group>"; };
-		A00000000000000000000109 /* KeepSceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KeepSceneDelegate.m; sourceTree = "<group>"; };
 		A00000000000000000000110 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A00000000000000000000111 /* KSBall.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KSBall.entitlements; sourceTree = "<group>"; };
 		A00000000000000000000121 /* KSBallSettings.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallSettings.m; sourceTree = "<group>"; };
@@ -122,12 +113,6 @@
 				A00000000000000000000101 /* main.m */,
 				A00000000000000000000102 /* AppDelegate.h */,
 				A00000000000000000000103 /* AppDelegate.m */,
-				A00000000000000000000104 /* SceneDelegate.h */,
-				A00000000000000000000105 /* SceneDelegate.m */,
-				A00000000000000000000106 /* HUDSceneDelegate.h */,
-				A00000000000000000000107 /* HUDSceneDelegate.m */,
-				A00000000000000000000108 /* KeepSceneDelegate.h */,
-				A00000000000000000000109 /* KeepSceneDelegate.m */,
 				A00000000000000000000032 /* Models */,
 				A00000000000000000000033 /* Services */,
 				A00000000000000000000034 /* Views */,
@@ -291,9 +276,6 @@
 			files = (
 				A00000000000000000000200 /* main.m in Sources */,
 				A00000000000000000000201 /* AppDelegate.m in Sources */,
-				A00000000000000000000202 /* SceneDelegate.m in Sources */,
-				A00000000000000000000203 /* HUDSceneDelegate.m in Sources */,
-				A00000000000000000000204 /* KeepSceneDelegate.m in Sources */,
 				A00000000000000000000205 /* KSBallSettings.m in Sources */,
 				A00000000000000000000206 /* KSBallSettingsStore.m in Sources */,
 				A00000000000000000000207 /* SystemApplicationBridge.m in Sources */,
