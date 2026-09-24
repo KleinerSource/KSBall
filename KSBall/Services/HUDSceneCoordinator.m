@@ -273,9 +273,7 @@ int KSBallRunHUDProcess(void) {
         _settingsStore = settingsStore;
         _applicationBridge = applicationBridge;
         _statusDescription = @"尚未启动 HUD。";
-        if (!KSBallIsHUDProcess()) {
-            [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(settingsDidChange:) name:KSBallSettingsDidChangeNotification object:settingsStore];
-        }
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(settingsDidChange:) name:KSBallSettingsDidChangeNotification object:settingsStore];
     }
     return self;
 }
@@ -311,6 +309,10 @@ int KSBallRunHUDProcess(void) {
 - (void)presentHUDWindow {
     if (self.hudWindow) {
         return;
+    }
+    // 启动期间开关可能已被关闭（子进程尚未注册 Darwin 通知），此时直接退出，避免误显示。
+    if (!self.settingsStore.settings.enabled) {
+        exit(EXIT_SUCCESS);
     }
 
     PassthroughHUDWindow *window = [[PassthroughHUDWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
@@ -524,6 +526,15 @@ int KSBallRunHUDProcess(void) {
 }
 
 - (void)settingsDidChange:(NSNotification *)notification {
+    if (KSBallIsHUDProcess()) {
+        // persona 模式下子进程以 root 运行，主程序的 SIGTERM/SIGKILL 会因 EPERM 无法送达，
+        // 关闭开关时由子进程监听共享设置变化并自行退出。
+        if (!self.settingsStore.settings.enabled) {
+            [self deactivateHUD];
+            exit(EXIT_SUCCESS);
+        }
+        return;
+    }
     if (self.settingsStore.settings.enabled) {
         [self activateHUD];
     } else {
