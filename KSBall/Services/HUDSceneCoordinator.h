@@ -7,6 +7,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 FOUNDATION_EXPORT BOOL KSBallIsHUDProcess(void);
 FOUNDATION_EXPORT int KSBallRunHUDProcess(void);
+FOUNDATION_EXPORT int KSBallStopHUDProcessMain(pid_t processIdentifier);
 
 @interface HUDSceneCoordinator : NSObject
 

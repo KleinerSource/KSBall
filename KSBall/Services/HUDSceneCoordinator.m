@@ -12,6 +12,7 @@
 #import <objc/runtime.h>
 #import <signal.h>
 #import <spawn.h>
+#import <stdio.h>
 #import <stdlib.h>
 #import <string.h>
 #import <sys/wait.h>
@@ -21,6 +22,7 @@
 #endif
 
 static const char * const KSBallHUDProcessArgument = "-hud";
+static const char * const KSBallStopProcessArgument = "-stop-hud";
 static NSString * const KSBallHUDProcessIdentifierDefaultsKey = @"KSBallHUDProcessIdentifier";
 static NSString * const KSBallHUDReadyProcessIdentifierStorageKey = @"HUDReadyProcessIdentifier";
 static NSString * const KSBallHUDStatusDescriptionStorageKey = @"HUDStatusDescription";
@@ -42,6 +44,91 @@ static int KSBallConfigureBasicSpawnAttributes(posix_spawnattr_t *attributes) {
         return result;
     }
     return posix_spawnattr_setflags(attributes, KSBallApplicationSpawnFlags);
+}
+
+// 统一封装 posix_spawn：优先以 root persona 启动（可选优化），缺少权限时回退为普通子进程。
+static int KSBallPosixSpawnExecutable(const char *executable, char *arguments[], pid_t *processIdentifier, BOOL *outUsingPersona, BOOL *outUsedNormalFallback, NSString **outPersonaFailure) {
+    posix_spawnattr_t attributes;
+    int result = posix_spawnattr_init(&attributes);
+    if (result != 0) {
+        return result;
+    }
+    BOOL attributesInitialized = YES;
+
+    KSBallSetPersonaFunction setPersona = (KSBallSetPersonaFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_np");
+    KSBallSetPersonaUIDFunction setPersonaUID = (KSBallSetPersonaUIDFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_uid_np");
+    KSBallSetPersonaGIDFunction setPersonaGID = (KSBallSetPersonaGIDFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_gid_np");
+    BOOL usingPersona = NO;
+    BOOL usedNormalFallback = NO;
+    NSString *personaFailure = nil;
+
+    // persona 是可选优化。缺少权限时会返回 EPERM，不能阻断普通子进程启动。
+    if (setPersona && setPersonaUID && setPersonaGID) {
+        result = setPersona(&attributes, KSBallApplicationPersonaIdentifier, KSBallApplicationPersonaFlags);
+        if (result == 0) {
+            result = setPersonaUID(&attributes, 0);
+        }
+        if (result == 0) {
+            result = setPersonaGID(&attributes, 0);
+        }
+        if (result == 0) {
+            usingPersona = YES;
+        } else {
+            personaFailure = [NSString stringWithUTF8String:strerror(result)];
+            posix_spawnattr_destroy(&attributes);
+            attributesInitialized = NO;
+            result = posix_spawnattr_init(&attributes);
+            if (result == 0) {
+                attributesInitialized = YES;
+                usedNormalFallback = YES;
+            }
+        }
+    } else {
+        personaFailure = @"persona 接口不可用";
+        usedNormalFallback = YES;
+    }
+
+    if (result == 0) {
+        result = KSBallConfigureBasicSpawnAttributes(&attributes);
+    }
+    if (result != 0) {
+        if (attributesInitialized) {
+            posix_spawnattr_destroy(&attributes);
+        }
+        if (outPersonaFailure) {
+            *outPersonaFailure = personaFailure;
+        }
+        return result;
+    }
+
+    result = posix_spawn(processIdentifier, executable, NULL, &attributes, arguments, environ);
+    posix_spawnattr_destroy(&attributes);
+
+    // 某些系统允许设置 persona 属性，但在真正 spawn 时才因权限返回 EPERM。
+    if (result == EPERM && usingPersona) {
+        personaFailure = @"Operation not permitted";
+        usingPersona = NO;
+        usedNormalFallback = YES;
+        result = posix_spawnattr_init(&attributes);
+        if (result == 0) {
+            result = KSBallConfigureBasicSpawnAttributes(&attributes);
+            if (result == 0) {
+                result = posix_spawn(processIdentifier, executable, NULL, &attributes, arguments, environ);
+            }
+            posix_spawnattr_destroy(&attributes);
+        }
+    }
+
+    if (outUsingPersona) {
+        *outUsingPersona = usingPersona;
+    }
+    if (outUsedNormalFallback) {
+        *outUsedNormalFallback = usedNormalFallback;
+    }
+    if (outPersonaFailure) {
+        *outPersonaFailure = personaFailure;
+    }
+    return result;
 }
 
 BOOL KSBallIsHUDProcess(void) {
@@ -233,6 +320,35 @@ int KSBallRunHUDProcess(void) {
     return EXIT_SUCCESS;
 }
 
+// root persona 停止进程入口：主程序以 mobile 运行，对 root 子进程直发信号会被 EPERM 拒绝，
+// 由本进程代为投递 SIGTERM，超时后升级为 SIGKILL。
+int KSBallStopHUDProcessMain(pid_t processIdentifier) {
+    if (processIdentifier <= 0) {
+        return EXIT_FAILURE;
+    }
+    if (kill(processIdentifier, 0) != 0 && errno == ESRCH) {
+        return EXIT_SUCCESS;
+    }
+    kill(processIdentifier, SIGTERM);
+    BOOL stopped = NO;
+    for (NSUInteger attempt = 0; attempt < 30 && !stopped; attempt++) {
+        stopped = kill(processIdentifier, 0) != 0 && errno == ESRCH;
+        if (!stopped) {
+            usleep(20000);
+        }
+    }
+    if (!stopped) {
+        kill(processIdentifier, SIGKILL);
+        for (NSUInteger attempt = 0; attempt < 30 && !stopped; attempt++) {
+            stopped = kill(processIdentifier, 0) != 0 && errno == ESRCH;
+            if (!stopped) {
+                usleep(20000);
+            }
+        }
+    }
+    return stopped ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 #pragma mark - 协调器
 
 @interface HUDSceneCoordinator ()
@@ -251,6 +367,7 @@ int KSBallRunHUDProcess(void) {
 - (void)unregisterHUDWindowFromAccessibilityHost;
 - (void)stopHUDProcessWithCompletion:(nullable dispatch_block_t)completion;
 - (BOOL)spawnHUDProcess;
+- (pid_t)spawnStopProcessForProcessIdentifier:(pid_t)processIdentifier;
 - (BOOL)hasLiveHUDProcess;
 @end
 
@@ -430,7 +547,12 @@ int KSBallRunHUDProcess(void) {
 
     self.hudProcessStopping = YES;
     self.hudProcessStopCompletion = completion;
-    kill(processIdentifier, SIGTERM);
+    // 普通回退模式下直发即可；persona 模式下子进程是 root，主程序的信号会被 EPERM 拒绝，
+    // 改由 root persona 停止进程代为投递。
+    pid_t stopProcessIdentifier = -1;
+    if (kill(processIdentifier, SIGTERM) != 0 && errno == EPERM) {
+        stopProcessIdentifier = [self spawnStopProcessForProcessIdentifier:processIdentifier];
+    }
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         int processStatus = 0;
         BOOL stopped = NO;
@@ -455,6 +577,13 @@ int KSBallRunHUDProcess(void) {
                     break;
                 }
                 usleep(20000);
+            }
+        }
+
+        if (stopProcessIdentifier > 0) {
+            int stopProcessStatus = 0;
+            // 停止进程会在子进程退出或自身超时后结束，这里回收它避免遗留僵尸。
+            while (waitpid(stopProcessIdentifier, &stopProcessStatus, 0) < 0 && errno == EINTR) {
             }
         }
 
@@ -553,85 +682,12 @@ int KSBallRunHUDProcess(void) {
     char *arguments[] = { (char *)executable, (char *)KSBallHUDProcessArgument, NULL };
     [KSBallSharedStorage removeDataForKey:KSBallHUDReadyProcessIdentifierStorageKey];
     [KSBallSharedStorage removeDataForKey:KSBallHUDStatusDescriptionStorageKey];
-    posix_spawnattr_t attributes;
-    int result = posix_spawnattr_init(&attributes);
-    if (result != 0) {
-        self.statusDescription = [NSString stringWithFormat:@"HUD 子进程属性初始化失败：%s", strerror(result)];
-        return NO;
-    }
-    BOOL attributesInitialized = YES;
 
-    KSBallSetPersonaFunction setPersona = (KSBallSetPersonaFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_np");
-    KSBallSetPersonaUIDFunction setPersonaUID = (KSBallSetPersonaUIDFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_uid_np");
-    KSBallSetPersonaGIDFunction setPersonaGID = (KSBallSetPersonaGIDFunction)dlsym(RTLD_DEFAULT, "posix_spawnattr_set_persona_gid_np");
+    pid_t processIdentifier = 0;
     BOOL usingPersona = NO;
     BOOL usedNormalFallback = NO;
     NSString *personaFailure = nil;
-
-    // persona 是可选优化。缺少权限时会返回 EPERM，不能阻断普通子进程启动。
-    if (setPersona && setPersonaUID && setPersonaGID) {
-        result = setPersona(&attributes, KSBallApplicationPersonaIdentifier, KSBallApplicationPersonaFlags);
-        if (result == 0) {
-            result = setPersonaUID(&attributes, 0);
-        }
-        if (result == 0) {
-            result = setPersonaGID(&attributes, 0);
-        }
-        if (result == 0) {
-            usingPersona = YES;
-        } else {
-            personaFailure = [NSString stringWithUTF8String:strerror(result)];
-            posix_spawnattr_destroy(&attributes);
-            attributesInitialized = NO;
-            result = posix_spawnattr_init(&attributes);
-            if (result == 0) {
-                attributesInitialized = YES;
-                usedNormalFallback = YES;
-            }
-        }
-    } else {
-        personaFailure = @"persona 接口不可用";
-        usedNormalFallback = YES;
-    }
-
-    if (result == 0) {
-        result = KSBallConfigureBasicSpawnAttributes(&attributes);
-    }
-    if (result != 0) {
-        if (attributesInitialized) {
-            posix_spawnattr_destroy(&attributes);
-        }
-        if (personaFailure.length > 0) {
-            self.statusDescription = [NSString stringWithFormat:@"HUD persona 属性失败（%@）；普通回退属性初始化失败：%s", personaFailure, strerror(result)];
-        } else {
-            self.statusDescription = [NSString stringWithFormat:@"HUD 子进程属性初始化失败：%s", strerror(result)];
-        }
-        return NO;
-    }
-
-    pid_t processIdentifier = 0;
-    result = posix_spawn(&processIdentifier, executable, NULL, &attributes, arguments, environ);
-    posix_spawnattr_destroy(&attributes);
-
-    // 某些系统允许设置 persona 属性，但在真正 spawn 时才因权限返回 EPERM。
-    if (result == EPERM && usingPersona) {
-        personaFailure = @"Operation not permitted";
-        usingPersona = NO;
-        usedNormalFallback = YES;
-        int fallbackInitializationResult = posix_spawnattr_init(&attributes);
-        BOOL fallbackAttributesInitialized = fallbackInitializationResult == 0;
-        result = fallbackInitializationResult;
-        if (result == 0) {
-            result = KSBallConfigureBasicSpawnAttributes(&attributes);
-        }
-        if (result == 0) {
-            result = posix_spawn(&processIdentifier, executable, NULL, &attributes, arguments, environ);
-        }
-        if (fallbackAttributesInitialized) {
-            posix_spawnattr_destroy(&attributes);
-        }
-    }
-
+    int result = KSBallPosixSpawnExecutable(executable, arguments, &processIdentifier, &usingPersona, &usedNormalFallback, &personaFailure);
     if (result != 0) {
         if (personaFailure.length > 0) {
             self.statusDescription = [NSString stringWithFormat:@"HUD 子进程启动失败：persona %@；普通回退：%s", personaFailure, strerror(result)];
@@ -651,6 +707,21 @@ int KSBallRunHUDProcess(void) {
         self.statusDescription = [NSString stringWithFormat:@"HUD 子进程已启动（PID %d）。", processIdentifier];
     }
     return YES;
+}
+
+// 以 root persona 重新执行自身作为停止进程，代主程序向 HUD 子进程投递信号。
+- (pid_t)spawnStopProcessForProcessIdentifier:(pid_t)processIdentifier {
+    NSString *executablePath = NSBundle.mainBundle.executablePath;
+    if (executablePath.length == 0) {
+        return -1;
+    }
+    const char *executable = executablePath.fileSystemRepresentation;
+    char processIdentifierBuffer[16];
+    snprintf(processIdentifierBuffer, sizeof(processIdentifierBuffer), "%d", processIdentifier);
+    char *arguments[] = { (char *)executable, (char *)KSBallStopProcessArgument, processIdentifierBuffer, NULL };
+    pid_t stopProcessIdentifier = 0;
+    int result = KSBallPosixSpawnExecutable(executable, arguments, &stopProcessIdentifier, NULL, NULL, NULL);
+    return result == 0 ? stopProcessIdentifier : -1;
 }
 
 - (BOOL)hasLiveHUDProcess {
