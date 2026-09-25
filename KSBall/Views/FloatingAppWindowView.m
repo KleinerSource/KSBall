@@ -97,7 +97,7 @@ static const CGFloat KSBallFloatingDismissVelocity = 600.0;
     self.placeholderIconView.clipsToBounds = YES;
     [self.placeholderView addSubview:self.placeholderIconView];
 
-    self.activityIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorViewStyle:UIActivityIndicatorViewStyleMedium];
+    self.activityIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     [self.activityIndicator startAnimating];
     [self.placeholderView addSubview:self.activityIndicator];
 
@@ -390,11 +390,12 @@ static const CGFloat KSBallFloatingDismissVelocity = 600.0;
             break;
         }
         case UIGestureRecognizerStateCancelled:
-        case UIGestureRecognizerStateFailed:
+        case UIGestureRecognizerStateFailed: {
             [UIView animateWithDuration:0.2 animations:^{
                 self.transform = CGAffineTransformIdentity;
             }];
             break;
+        }
         default:
             break;
     }
