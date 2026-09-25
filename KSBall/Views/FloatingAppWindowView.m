@@ -82,7 +82,7 @@ static const CGFloat KSBallFloatingDockCollapseVelocity = 600.0;
     self.scalingView = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, self.screenSize.width, self.screenSize.height)];
     self.scalingView.layer.anchorPoint = CGPointZero;
     self.scalingView.layer.position = CGPointZero;
-    self.scalingView.userInteractionEnabled = NO;
+    // 该层承载远端应用场景；必须参与 UIKit 命中测试，应用内的点击和文本输入才能送达场景。
     [self.contentView addSubview:self.scalingView];
 
     self.placeholderView = [UIView new];
@@ -275,6 +275,7 @@ static const CGFloat KSBallFloatingDockCollapseVelocity = 600.0;
     if (presentationView) {
         presentationView.frame = self.scalingView.bounds;
         presentationView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        presentationView.userInteractionEnabled = YES;
         [self.scalingView addSubview:presentationView];
     }
     [self.activityIndicator stopAnimating];

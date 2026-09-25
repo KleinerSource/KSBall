@@ -12,6 +12,7 @@
 #import <objc/runtime.h>
 #import <signal.h>
 #import <spawn.h>
+#import <math.h>
 #import <stdio.h>
 #import <stdlib.h>
 #import <string.h>
@@ -31,6 +32,12 @@ static const uid_t KSBallApplicationPersonaIdentifier = 99;
 static const uint32_t KSBallApplicationPersonaFlags = 1;
 static const short KSBallApplicationSpawnFlags = 2;
 static const CGFloat KSBallHUDWindowLevel = 10000010.0;
+// 留在应用和系统键盘上方，同时让系统键盘可以盖过 HUD。
+static const CGFloat KSBallGlobalKeyboardHUDWindowLevel = 10000.0;
+
+static CGFloat KSBallHUDWindowLevelForKeyboardMode(KSBallKeyboardPresentationMode mode) {
+    return mode == KSBallKeyboardPresentationModeGlobal ? KSBallGlobalKeyboardHUDWindowLevel : KSBallHUDWindowLevel;
+}
 
 extern char **environ;
 
@@ -416,6 +423,7 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
 
 - (BOOL)registerHUDWindowWithAccessibilityHost:(UIWindow *)window;
 - (void)unregisterHUDWindowFromAccessibilityHost;
+- (void)updateHUDWindowLevelForKeyboardPresentationMode;
 - (void)stopHUDProcessWithCompletion:(nullable dispatch_block_t)completion;
 - (void)rebuildHUD;
 - (BOOL)spawnHUDProcess;
@@ -493,7 +501,7 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
     };
     window.rootViewController = controller;
     window.backgroundColor = UIColor.clearColor;
-    window.windowLevel = KSBallHUDWindowLevel;
+    window.windowLevel = KSBallHUDWindowLevelForKeyboardMode(self.settingsStore.settings.keyboardPresentationMode);
     window.hidden = NO;
     [window makeKeyAndVisible];
     self.hudWindow = window;
@@ -741,6 +749,7 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
             [self deactivateHUD];
             exit(EXIT_SUCCESS);
         }
+        [self updateHUDWindowLevelForKeyboardPresentationMode];
         return;
     }
     if (self.settingsStore.settings.enabled) {
@@ -755,6 +764,19 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
         }
     } else {
         [self deactivateHUD];
+    }
+}
+
+- (void)updateHUDWindowLevelForKeyboardPresentationMode {
+    UIWindow *window = self.hudWindow;
+    CGFloat desiredLevel = KSBallHUDWindowLevelForKeyboardMode(self.settingsStore.settings.keyboardPresentationMode);
+    if (!window || fabs(window.windowLevel - desiredLevel) < 0.5) {
+        return;
+    }
+    [self unregisterHUDWindowFromAccessibilityHost];
+    window.windowLevel = desiredLevel;
+    if (![self registerHUDWindowWithAccessibilityHost:window]) {
+        NSLog(@"KSBall HUD window re-registration failed after keyboard presentation mode changed: %@", self.statusDescription);
     }
 }
 

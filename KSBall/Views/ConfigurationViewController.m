@@ -15,9 +15,10 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     KSBallConfigurationSectionAppearance = 1,
     KSBallConfigurationSectionLayout = 2,
     KSBallConfigurationSectionShortcuts = 3,
-    KSBallConfigurationSectionSupport = 4,
-    KSBallConfigurationSectionUpdate = 5,
-    KSBallConfigurationSectionCount = 6,
+    KSBallConfigurationSectionKeyboard = 4,
+    KSBallConfigurationSectionSupport = 5,
+    KSBallConfigurationSectionUpdate = 6,
+    KSBallConfigurationSectionCount = 7,
 };
 
 typedef NS_ENUM(NSInteger, KSBallAppearanceRow) {
@@ -110,6 +111,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         case KSBallConfigurationSectionAppearance: return KSBallAppearanceRowCount;
         case KSBallConfigurationSectionLayout: return KSBallLayoutRowCount;
         case KSBallConfigurationSectionShortcuts: return KSBallShortcutActionRowCount + self.settingsStore.settings.shortcuts.count;
+        case KSBallConfigurationSectionKeyboard: return 1;
         case KSBallConfigurationSectionUpdate: return KSBallUpdateRowCount;
         case KSBallConfigurationSectionSupport: return KSBallSupportRowCount;
         default: return 1;
@@ -122,6 +124,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         case KSBallConfigurationSectionAppearance: return @"外观";
         case KSBallConfigurationSectionLayout: return @"菜单布局";
         case KSBallConfigurationSectionShortcuts: return [NSString stringWithFormat:@"快捷应用（%lu/%lu）", (unsigned long)self.settingsStore.settings.shortcuts.count, (unsigned long)KSBallMaximumShortcuts];
+        case KSBallConfigurationSectionKeyboard: return @"输入法";
         case KSBallConfigurationSectionSupport: return @"系统能力";
         case KSBallConfigurationSectionUpdate: return @"软件更新";
     }
@@ -138,6 +141,8 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
             return @"扇形菜单围绕悬浮条逐圈展开，每圈按屏幕可显示的范围和间距放下尽可能多的图标。同圈间距控制一圈内相邻图标的距离，圈间距控制两圈之间的距离。空间不足时会等比缩小图标。";
         case KSBallConfigurationSectionShortcuts:
             return @"在“调整顺序”中以扇形预览长按拖动图标即可排序，靠前的应用位于靠近悬浮条的内圈。左滑应用可删除。\n\n打开应用右侧的开关后，该应用在菜单中以悬浮窗打开（图标带窗口角标）：拖动标题条移动窗口，拖右下角缩放，拖到屏幕左右边缘或点“−”收进边缘，点缩略图恢复、向外甩出关闭。最多同时悬浮 3 个应用。";
+        case KSBallConfigurationSectionKeyboard:
+            return @"悬浮框内：键盘随悬浮应用画面缩放，并限制在悬浮窗内。全局：键盘按系统尺寸显示在屏幕底部。";
         case KSBallConfigurationSectionSupport:
             return @"KSBall 只应通过 TrollStore 安装。私有能力不可用时，配置仍会保留。";
         default: {
@@ -145,7 +150,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
             NSDictionary *info = NSBundle.mainBundle.infoDictionary;
             NSString *version = info[@"CFBundleShortVersionString"] ?: @"-";
             NSString *build = info[@"CFBundleVersion"] ?: @"-";
-            return [NSString stringWithFormat:@"开启“自动检查更新”后，打开 KSBall 时会检查 GitHub 上的最新构建。更新通过 TrollStore 安装，安装后需要再打开一次 KSBall 以恢复悬浮条。\n\nKSBall %@ (%@)\n开发者：KleinerSource", version, build];
+            return [NSString stringWithFormat:@"开启“自动检查更新”后，打开 KSBall 时会检查最新构建。更新通过 TrollStore 安装，安装后需要再打开一次 KSBall 以恢复悬浮条。\n\nKSBall %@ (%@)\n开发者：KleinerSource", version, build];
         }
     }
 }
@@ -160,6 +165,8 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
             return [self layoutCellForRow:indexPath.row];
         case KSBallConfigurationSectionShortcuts:
             return [self shortcutCellForRow:indexPath.row];
+        case KSBallConfigurationSectionKeyboard:
+            return [self keyboardPresentationCell];
         case KSBallConfigurationSectionUpdate:
             return [self updateCellForRow:indexPath.row];
         default:
@@ -335,6 +342,21 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     return cell;
 }
 
+- (UITableViewCell *)keyboardPresentationCell {
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"KeyboardPresentationCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"KeyboardPresentationCell"];
+    UISegmentedControl *control = [cell.accessoryView isKindOfClass:UISegmentedControl.class] ? (UISegmentedControl *)cell.accessoryView : nil;
+    if (!control) {
+        control = [[UISegmentedControl alloc] initWithItems:@[@"悬浮框内", @"全局"]];
+        control.frame = CGRectMake(0.0, 0.0, 180.0, 32.0);
+        [control addTarget:self action:@selector(keyboardPresentationModeChanged:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = control;
+    }
+    control.selectedSegmentIndex = self.settingsStore.settings.keyboardPresentationMode;
+    cell.textLabel.text = @"键盘显示位置";
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    return cell;
+}
+
 - (UITableViewCell *)updateCellForRow:(NSInteger)row {
     if (row == KSBallUpdateRowAutomatic) {
         UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"AutomaticUpdateCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"AutomaticUpdateCell"];
@@ -428,6 +450,15 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 
 - (void)floatingWindowSwitchChanged:(UISwitch *)sender {
     [self.settingsStore setShortcutAtIndex:(NSUInteger)sender.tag opensInFloatingWindow:sender.isOn];
+}
+
+- (void)keyboardPresentationModeChanged:(UISegmentedControl *)sender {
+    KSBallKeyboardPresentationMode mode = sender.selectedSegmentIndex == KSBallKeyboardPresentationModeFloatingWindow
+        ? KSBallKeyboardPresentationModeFloatingWindow
+        : KSBallKeyboardPresentationModeGlobal;
+    [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
+        settings.keyboardPresentationMode = mode;
+    }];
 }
 
 - (void)appearanceStyleChanged:(UISegmentedControl *)sender {
