@@ -417,6 +417,7 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
 - (BOOL)registerHUDWindowWithAccessibilityHost:(UIWindow *)window;
 - (void)unregisterHUDWindowFromAccessibilityHost;
 - (void)stopHUDProcessWithCompletion:(nullable dispatch_block_t)completion;
+- (void)rebuildHUD;
 - (BOOL)spawnHUDProcess;
 - (pid_t)spawnStopProcessForProcessIdentifier:(pid_t)processIdentifier;
 - (BOOL)hasLiveHUDProcess;
@@ -549,6 +550,19 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
         return;
     }
     [self spawnHUDProcess];
+}
+
+- (void)rebuildHUD {
+    if (KSBallIsHUDProcess()) {
+        return;
+    }
+
+    __weak typeof(self) weakSelf = self;
+    [self stopHUDProcessWithCompletion:^{
+        if (weakSelf.settingsStore.settings.enabled) {
+            [weakSelf activateHUD];
+        }
+    }];
 }
 
 // 旧的托管连接随 SpringBoard 一起失效，丢弃后重新注册；新 SpringBoard 的服务可能尚未就绪，失败时稍后重试。
