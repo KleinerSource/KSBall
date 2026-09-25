@@ -2,6 +2,10 @@
 
 @implementation PassthroughHUDWindow
 
+- (BOOL)canBecomeKeyWindow {
+    return NO;
+}
+
 + (BOOL)_isSystemWindow {
     return YES;
 }

@@ -506,7 +506,6 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
     window.backgroundColor = UIColor.clearColor;
     window.windowLevel = KSBallHUDWindowLevelForKeyboardMode(self.settingsStore.settings.keyboardPresentationMode);
     window.hidden = NO;
-    [window makeKeyAndVisible];
     self.hudWindow = window;
 
     if (![self registerHUDWindowWithAccessibilityHost:window]) {
