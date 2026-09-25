@@ -160,22 +160,6 @@ static void KSBallTouchEventSourceCallback(void *context) {
         [event _addTouch:touch forDelayedDelivery:NO];
     }
     [application sendEvent:event];
-
-    BOOL hasActiveTouch = NO;
-    for (UITouch *touch in touches) {
-        if (touch.phase != UITouchPhaseEnded && touch.phase != UITouchPhaseCancelled) {
-            hasActiveTouch = YES;
-            break;
-        }
-    }
-    if (!hasActiveTouch) {
-        for (UIWindow *window in application.windows) {
-            if ([window isKindOfClass:PassthroughHUDWindow.class] && window.isKeyWindow) {
-                [window resignKeyWindow];
-                break;
-            }
-        }
-    }
 }
 
 static void KSBallReceiveTouch(NSInteger identifier, CGPoint location, UITouchPhase phase, UIWindow *window, UIView *view) {
@@ -228,9 +212,6 @@ static void KSBallReceiveTouch(NSInteger identifier, CGPoint location, UITouchPh
 
     if (touchesChanged) {
         KSBallSafeTouches = [KSBallLivingTouches copy];
-    }
-    if (phase == UITouchPhaseBegan) {
-        [window makeKeyWindow];
     }
     if (KSBallTouchEventSource) {
         CFRunLoopSourceSignal(KSBallTouchEventSource);

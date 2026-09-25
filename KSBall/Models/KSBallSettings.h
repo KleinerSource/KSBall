@@ -45,13 +45,6 @@ typedef NS_ENUM(NSInteger, KSBallBackdropStyle) {
     KSBallBackdropStyleAutomatic = 3,
 };
 
-typedef NS_ENUM(NSInteger, KSBallKeyboardPresentationMode) {
-    /// 键盘随悬浮应用画面缩放，并受悬浮窗裁剪。
-    KSBallKeyboardPresentationModeFloatingWindow = 0,
-    /// 键盘按系统尺寸显示在屏幕底部。
-    KSBallKeyboardPresentationModeGlobal = 1,
-};
-
 @interface KSBallShortcut : NSObject <NSCopying>
 
 @property (nonatomic, copy, readonly) NSUUID *identifier;
@@ -86,7 +79,6 @@ typedef NS_ENUM(NSInteger, KSBallKeyboardPresentationMode) {
 @property (nonatomic) KSBallBackdropStyle backdropStyle;
 /// 毛玻璃的模糊程度，1 为系统材质的完整模糊。
 @property (nonatomic) CGFloat backdropBlur;
-@property (nonatomic) KSBallKeyboardPresentationMode keyboardPresentationMode;
 @property (nonatomic, strong) NSMutableArray<KSBallShortcut *> *shortcuts;
 
 /// 兼容旧版本逐应用开关数据；不再用于决定悬浮窗口模式。

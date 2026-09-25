@@ -92,7 +92,6 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         _handleStyle = KSBallHandleStyleAutomatic;
         _handleTouchRadius = KSBallDefaultHandleTouchRadius;
         _backdropStyle = KSBallBackdropStyleAutomatic;
-        _keyboardPresentationMode = KSBallKeyboardPresentationModeGlobal;
         _backdropBlur = KSBallDefaultBackdropBlur;
         _shortcuts = [NSMutableArray array];
     }
@@ -112,7 +111,6 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     copy.handleStyle = self.handleStyle;
     copy.handleTouchRadius = self.handleTouchRadius;
     copy.backdropStyle = self.backdropStyle;
-    copy.keyboardPresentationMode = self.keyboardPresentationMode;
     copy.backdropBlur = self.backdropBlur;
     for (KSBallShortcut *shortcut in self.shortcuts) {
         [copy.shortcuts addObject:[shortcut copy]];
@@ -135,10 +133,6 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     if (self.backdropStyle < KSBallBackdropStyleLight || self.backdropStyle > KSBallBackdropStyleAutomatic) {
         self.backdropStyle = KSBallBackdropStyleAutomatic;
     }
-    if (self.keyboardPresentationMode != KSBallKeyboardPresentationModeFloatingWindow && self.keyboardPresentationMode != KSBallKeyboardPresentationModeGlobal) {
-        self.keyboardPresentationMode = KSBallKeyboardPresentationModeGlobal;
-    }
-
     NSMutableArray<KSBallShortcut *> *validShortcuts = [NSMutableArray array];
     NSMutableSet<NSString *> *bundleIdentifiers = [NSMutableSet set];
     for (KSBallShortcut *shortcut in self.shortcuts) {
@@ -187,7 +181,6 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         @"handleStyle": @(self.handleStyle),
         @"handleTouchRadius": @(self.handleTouchRadius),
         @"backdropStyle": @(self.backdropStyle),
-        @"keyboardPresentationMode": @(self.keyboardPresentationMode),
         @"backdropBlur": @(self.backdropBlur),
         @"shortcuts": shortcuts,
     };
@@ -214,7 +207,6 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     NSNumber *handleStyle = number(@"handleStyle");
     NSNumber *handleTouchRadius = number(@"handleTouchRadius");
     NSNumber *backdropStyle = number(@"backdropStyle");
-    NSNumber *keyboardPresentationMode = number(@"keyboardPresentationMode");
     NSNumber *backdropBlur = number(@"backdropBlur");
     if (enabled) settings.enabled = enabled.boolValue;
     if (floatingSplitEnabled) settings.floatingSplitEnabled = floatingSplitEnabled.boolValue;
@@ -227,7 +219,6 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     if (handleStyle) settings.handleStyle = handleStyle.integerValue;
     if (handleTouchRadius) settings.handleTouchRadius = handleTouchRadius.doubleValue;
     if (backdropStyle) settings.backdropStyle = backdropStyle.integerValue;
-    if (keyboardPresentationMode) settings.keyboardPresentationMode = keyboardPresentationMode.integerValue;
     if (backdropBlur) settings.backdropBlur = backdropBlur.doubleValue;
 
     NSArray *shortcutDictionaries = [dictionary[@"shortcuts"] isKindOfClass:NSArray.class] ? dictionary[@"shortcuts"] : @[];
