@@ -7,8 +7,10 @@
 #import "SystemApplicationBridge.h"
 
 static const CGFloat KSBallFloatingDockPlateCornerRadius = 14.0;
-static const CGFloat KSBallFloatingDockHandleWidth = 30.0;
-static const CGFloat KSBallFloatingDockHandleHeight = 54.0;
+static const CGFloat KSBallFloatingDockHandleTouchWidth = 28.0;
+static const CGFloat KSBallFloatingDockHandleHeight = 50.0;
+static const CGFloat KSBallFloatingDockHandleVisibleWidth = 14.0;
+static const CGFloat KSBallFloatingDockHandleVisibleHeight = 46.0;
 // 应用退出后先显示提示，停留片刻再关闭窗口。
 static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
 
@@ -31,6 +33,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
 @property (nonatomic, strong) NSMutableArray<KSBallFloatingWindowEntry *> *minimizedEntries;
 @property (nonatomic, strong) UIVisualEffectView *dockPlateView;
 @property (nonatomic, strong) UIView *dockHandleView;
+@property (nonatomic, strong) UIView *dockHandlePillView;
 @property (nonatomic, strong) UIImageView *dockHandleIconView;
 @property (nonatomic) KSBallEdge dockEdge;
 @property (nonatomic) BOOL windowsHidden;
@@ -40,6 +43,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
 - (void)collapseDock;
 - (void)expandDock;
 - (void)layoutDockHandle;
+- (void)updateDockHandleAppearance;
 @end
 
 @implementation FloatingAppWindowManager
@@ -53,6 +57,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
         _minimizedEntries = [NSMutableArray array];
         _dockEdge = KSBallEdgeRight;
         _userInterfaceStyle = UIUserInterfaceStyleLight;
+        _handleStyle = KSBallHandleStyleAutomatic;
 
         // 收纳区底板只包住缩略图，不占满整条屏幕边缘；缩略图之间的缝隙也不能漏触摸到下层应用。
         _dockPlateView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterial]];
@@ -65,24 +70,31 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
         [containerView addSubview:_dockPlateView];
 
         _dockHandleView = [UIView new];
-        _dockHandleView.backgroundColor = UIColor.secondarySystemBackgroundColor;
-        _dockHandleView.layer.cornerRadius = 12.0;
-        _dockHandleView.layer.cornerCurve = kCACornerCurveContinuous;
-        _dockHandleView.layer.borderWidth = 0.5;
-        _dockHandleView.layer.borderColor = UIColor.separatorColor.CGColor;
+        _dockHandleView.backgroundColor = UIColor.clearColor;
         _dockHandleView.isAccessibilityElement = YES;
         _dockHandleView.accessibilityLabel = @"显示悬浮应用边栏";
         _dockHandleView.accessibilityTraits = UIAccessibilityTraitButton;
         _dockHandleView.hidden = YES;
         KSBallSetLayerHitTestsAsOpaque(_dockHandleView.layer, YES);
+        _dockHandlePillView = [UIView new];
+        _dockHandlePillView.userInteractionEnabled = NO;
+        _dockHandlePillView.layer.cornerRadius = KSBallFloatingDockHandleVisibleWidth / 2.0;
+        _dockHandlePillView.layer.cornerCurve = kCACornerCurveContinuous;
+        _dockHandlePillView.layer.borderWidth = 0.5;
+        _dockHandlePillView.layer.shadowColor = UIColor.blackColor.CGColor;
+        _dockHandlePillView.layer.shadowOpacity = 0.3;
+        _dockHandlePillView.layer.shadowRadius = 3.0;
+        _dockHandlePillView.layer.shadowOffset = CGSizeZero;
+        [_dockHandleView addSubview:_dockHandlePillView];
         _dockHandleIconView = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"chevron.left"]];
         _dockHandleIconView.contentMode = UIViewContentModeScaleAspectFit;
-        _dockHandleIconView.tintColor = UIColor.secondaryLabelColor;
-        [_dockHandleView addSubview:_dockHandleIconView];
+        _dockHandleIconView.userInteractionEnabled = NO;
+        [_dockHandlePillView addSubview:_dockHandleIconView];
         UITapGestureRecognizer *showDockRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(expandDock)];
         showDockRecognizer.cancelsTouchesInView = NO;
         [_dockHandleView addGestureRecognizer:showDockRecognizer];
         [containerView addSubview:_dockHandleView];
+        [self updateDockHandleAppearance];
     }
     return self;
 }
@@ -400,9 +412,12 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     CGFloat maxY = MAX(minY, CGRectGetMaxY(safeBounds) - KSBallFloatingDockHandleHeight);
     CGFloat y = self.dockHandleCenterY - KSBallFloatingDockHandleHeight / 2.0;
     y = MIN(MAX(y, minY), maxY);
-    CGFloat x = self.dockEdge == KSBallEdgeLeft ? CGRectGetMinX(bounds) : CGRectGetMaxX(bounds) - KSBallFloatingDockHandleWidth;
-    self.dockHandleView.frame = CGRectMake(x, y, KSBallFloatingDockHandleWidth, KSBallFloatingDockHandleHeight);
-    self.dockHandleIconView.frame = CGRectMake(9.0, 20.0, 12.0, 14.0);
+    CGFloat x = self.dockEdge == KSBallEdgeLeft ? CGRectGetMinX(bounds) : CGRectGetMaxX(bounds) - KSBallFloatingDockHandleTouchWidth;
+    self.dockHandleView.frame = CGRectMake(x, y, KSBallFloatingDockHandleTouchWidth, KSBallFloatingDockHandleHeight);
+    CGFloat pillX = self.dockEdge == KSBallEdgeLeft ? 0.0 : KSBallFloatingDockHandleTouchWidth - KSBallFloatingDockHandleVisibleWidth;
+    CGFloat pillY = (KSBallFloatingDockHandleHeight - KSBallFloatingDockHandleVisibleHeight) / 2.0;
+    self.dockHandlePillView.frame = CGRectMake(pillX, pillY, KSBallFloatingDockHandleVisibleWidth, KSBallFloatingDockHandleVisibleHeight);
+    self.dockHandleIconView.frame = CGRectMake(3.0, (KSBallFloatingDockHandleVisibleHeight - 12.0) / 2.0, 8.0, 12.0);
     NSString *symbol = self.dockEdge == KSBallEdgeLeft ? @"chevron.right" : @"chevron.left";
     self.dockHandleIconView.image = [UIImage systemImageNamed:symbol];
 }
@@ -481,6 +496,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     _userInterfaceStyle = userInterfaceStyle;
     self.dockPlateView.overrideUserInterfaceStyle = userInterfaceStyle;
     self.dockHandleView.overrideUserInterfaceStyle = userInterfaceStyle;
+    [self updateDockHandleAppearance];
     for (KSBallFloatingWindowEntry *entry in self.entries) {
         entry.windowView.overrideUserInterfaceStyle = userInterfaceStyle;
         [entry.host updateUserInterfaceStyle:userInterfaceStyle];
@@ -516,6 +532,29 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     KSBallFloatingWindowEntry *entry = [self entryForWindowView:windowView];
     if (entry) {
         [self restoreEntry:entry];
+    }
+}
+
+- (void)setHandleStyle:(KSBallHandleStyle)handleStyle {
+    if (_handleStyle == handleStyle) {
+        return;
+    }
+    _handleStyle = handleStyle;
+    [self updateDockHandleAppearance];
+}
+
+- (void)updateDockHandleAppearance {
+    // “隐藏”只隐藏主悬浮条；边栏把手仍须可见以便重新打开。
+    BOOL dark = self.handleStyle == KSBallHandleStyleDark ||
+        ((self.handleStyle == KSBallHandleStyleAutomatic || self.handleStyle == KSBallHandleStyleHidden) && self.userInterfaceStyle == UIUserInterfaceStyleDark);
+    if (dark) {
+        self.dockHandlePillView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.7];
+        self.dockHandlePillView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.25].CGColor;
+        self.dockHandleIconView.tintColor = [UIColor colorWithWhite:1.0 alpha:0.9];
+    } else {
+        self.dockHandlePillView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.8];
+        self.dockHandlePillView.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.18].CGColor;
+        self.dockHandleIconView.tintColor = [UIColor colorWithWhite:0.0 alpha:0.75];
     }
 }
 

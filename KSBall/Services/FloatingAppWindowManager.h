@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import "KSBallSettings.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -14,6 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// 需要接收触摸的窗口与收纳区底板；整体隐藏时为空。
 @property (nonatomic, copy, readonly) NSArray<UIView *> *interactiveViews;
 @property (nonatomic) UIUserInterfaceStyle userInterfaceStyle;
+@property (nonatomic) KSBallHandleStyle handleStyle;
 
 - (instancetype)initWithContainerView:(UIView *)containerView applicationBridge:(SystemApplicationBridge *)applicationBridge;
 - (instancetype)init NS_UNAVAILABLE;
