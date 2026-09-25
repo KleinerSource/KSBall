@@ -17,7 +17,6 @@ FOUNDATION_EXPORT int KSBallStopHUDProcessMain(pid_t processIdentifier);
 + (instancetype)sharedCoordinator;
 - (instancetype)initWithSettingsStore:(KSBallSettingsStore *)settingsStore applicationBridge:(SystemApplicationBridge *)applicationBridge;
 - (void)activateHUD;
-- (void)rebuildHUD;
 - (void)deactivateHUD;
 - (void)openConfiguration;
 

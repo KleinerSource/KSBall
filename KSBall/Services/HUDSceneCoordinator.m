@@ -248,6 +248,7 @@ static void KSBallInstallHUDEventDispatcher(UIApplication *application) {
 @interface HUDSceneCoordinator ()
 - (void)presentHUDWindow;
 - (void)installTerminationHandler;
+- (void)reattachHUDWindowAfterSpringBoardLaunch;
 @end
 
 @interface KSBallHUDApplicationDelegate : UIResponder <UIApplicationDelegate>
@@ -309,11 +310,11 @@ int KSBallRunHUDProcess(void) {
     }
     ((void (*)(id, SEL))objc_msgSend)(application, completeAsPluginSelector);
 
-    // SpringBoard 重启后 accessibility 窗口托管随之失效，直接退出，由主程序重新拉起。
+    // SpringBoard 重启后 accessibility 窗口托管随之失效，但窗口渲染上下文由 backboardd 持有仍然有效，
+    // 向新的 SpringBoard 重新注册即可恢复，无需主程序重新拉起（重启时主程序通常也被结束）。
     static int springBoardLaunchToken;
     notify_register_dispatch("SBSpringBoardDidLaunchNotification", &springBoardLaunchToken, dispatch_get_main_queue(), ^(int token) {
-        notify_cancel(token);
-        exit(EXIT_SUCCESS);
+        [HUDSceneCoordinator.sharedCoordinator reattachHUDWindowAfterSpringBoardLaunch];
     });
 
     CFRunLoopRun();
@@ -499,17 +500,32 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
     [self spawnHUDProcess];
 }
 
-- (void)rebuildHUD {
-    if (KSBallIsHUDProcess()) {
+// 旧的托管连接随 SpringBoard 一起失效，丢弃后重新注册；新 SpringBoard 的服务可能尚未就绪，失败时稍后重试。
+- (void)reattachHUDWindowAfterSpringBoardLaunch {
+    [self reattachHUDWindowWithRemainingAttempts:5];
+}
+
+- (void)reattachHUDWindowWithRemainingAttempts:(NSUInteger)remainingAttempts {
+    UIWindow *window = self.hudWindow;
+    if (!window || !self.settingsStore.settings.enabled) {
         return;
     }
-
+    self.accessibilityWindowHostingController = nil;
+    self.accessibilityWindowContextIdentifier = 0;
+    self.accessibilityWindowRegistered = NO;
+    if ([self registerHUDWindowWithAccessibilityHost:window]) {
+        self.statusDescription = @"SpringBoard 重启后 HUD 窗口已重新注册。";
+        return;
+    }
+    if (remainingAttempts <= 1) {
+        NSLog(@"KSBall HUD window re-registration failed: %@", self.statusDescription);
+        [self deactivateHUD];
+        exit(EXIT_FAILURE);
+    }
     __weak typeof(self) weakSelf = self;
-    [self stopHUDProcessWithCompletion:^{
-        if (weakSelf.settingsStore.settings.enabled) {
-            [weakSelf activateHUD];
-        }
-    }];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [weakSelf reattachHUDWindowWithRemainingAttempts:remainingAttempts - 1];
+    });
 }
 
 - (void)deactivateHUD {
