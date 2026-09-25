@@ -66,6 +66,8 @@ typedef NS_ENUM(NSInteger, KSBallKeyboardPresentationMode) {
 @interface KSBallSettings : NSObject <NSCopying>
 
 @property (nonatomic) BOOL enabled;
+/// 总开关关闭时，悬浮应用快捷项改为全屏打开，不初始化悬浮分屏宿主。
+@property (nonatomic) BOOL floatingSplitEnabled;
 @property (nonatomic) KSBallEdge edge;
 @property (nonatomic) CGFloat normalizedVerticalPosition;
 @property (nonatomic) CGFloat iconSize;
@@ -84,6 +86,8 @@ typedef NS_ENUM(NSInteger, KSBallKeyboardPresentationMode) {
 
 /// 是否有快捷应用设为以悬浮窗打开；HUD 子进程据此决定是否初始化悬浮分屏宿主。
 @property (nonatomic, readonly) BOOL hasFloatingWindowShortcuts;
+/// 总开关开启且至少有一个悬浮应用快捷项时，才需要初始化宿主。
+@property (nonatomic, readonly) BOOL shouldEnableFloatingAppHosting;
 
 + (instancetype)defaultSettings;
 - (void)normalize;

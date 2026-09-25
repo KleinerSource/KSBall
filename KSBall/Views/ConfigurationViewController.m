@@ -14,11 +14,12 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     KSBallConfigurationSectionHUD = 0,
     KSBallConfigurationSectionAppearance = 1,
     KSBallConfigurationSectionLayout = 2,
-    KSBallConfigurationSectionShortcuts = 3,
-    KSBallConfigurationSectionKeyboard = 4,
-    KSBallConfigurationSectionSupport = 5,
-    KSBallConfigurationSectionUpdate = 6,
-    KSBallConfigurationSectionCount = 7,
+    KSBallConfigurationSectionFloatingSplit = 3,
+    KSBallConfigurationSectionShortcuts = 4,
+    KSBallConfigurationSectionKeyboard = 5,
+    KSBallConfigurationSectionSupport = 6,
+    KSBallConfigurationSectionUpdate = 7,
+    KSBallConfigurationSectionCount = 8,
 };
 
 typedef NS_ENUM(NSInteger, KSBallAppearanceRow) {
@@ -110,6 +111,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         case KSBallConfigurationSectionHUD: return 1;
         case KSBallConfigurationSectionAppearance: return KSBallAppearanceRowCount;
         case KSBallConfigurationSectionLayout: return KSBallLayoutRowCount;
+        case KSBallConfigurationSectionFloatingSplit: return 1;
         case KSBallConfigurationSectionShortcuts: return KSBallShortcutActionRowCount + self.settingsStore.settings.shortcuts.count;
         case KSBallConfigurationSectionKeyboard: return 1;
         case KSBallConfigurationSectionUpdate: return KSBallUpdateRowCount;
@@ -123,6 +125,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         case KSBallConfigurationSectionHUD: return @"悬浮条";
         case KSBallConfigurationSectionAppearance: return @"外观";
         case KSBallConfigurationSectionLayout: return @"菜单布局";
+        case KSBallConfigurationSectionFloatingSplit: return @"悬浮分屏";
         case KSBallConfigurationSectionShortcuts: return [NSString stringWithFormat:@"快捷应用（%lu/%lu）", (unsigned long)self.settingsStore.settings.shortcuts.count, (unsigned long)KSBallMaximumShortcuts];
         case KSBallConfigurationSectionKeyboard: return @"输入法";
         case KSBallConfigurationSectionSupport: return @"系统能力";
@@ -139,6 +142,8 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
             return @"“自动”跟随系统的浅色/深色模式。悬浮条设为隐藏后，边缘的触摸区域仍然有效；调整触摸半径时悬浮条旁会显示触摸区域。模糊程度控制毛玻璃的模糊强度，调整时会实时预览。";
         case KSBallConfigurationSectionLayout:
             return @"扇形菜单围绕悬浮条逐圈展开，每圈按屏幕可显示的范围和间距放下尽可能多的图标。同圈间距控制一圈内相邻图标的距离，圈间距控制两圈之间的距离。空间不足时会等比缩小图标。";
+        case KSBallConfigurationSectionFloatingSplit:
+            return @"关闭后，快捷应用会全屏打开，已打开的悬浮窗口会关闭，悬浮分屏宿主也会退出以减少内存占用。各应用的悬浮窗开关会保留，重新开启总开关后恢复生效。没有应用启用单项悬浮窗时，不会加载宿主。";
         case KSBallConfigurationSectionShortcuts:
             return @"在“调整顺序”中以扇形预览长按拖动图标即可排序，靠前的应用位于靠近悬浮条的内圈。左滑应用可删除。\n\n打开应用右侧的开关后，该应用在菜单中以悬浮窗打开（图标带窗口角标）：拖动标题条移动窗口，拖右下角缩放，拖到屏幕左右边缘或点“−”收进边缘，点缩略图恢复、向外甩出关闭。最多同时悬浮 3 个应用。";
         case KSBallConfigurationSectionKeyboard:
@@ -163,6 +168,8 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
             return [self appearanceCellForRow:indexPath.row];
         case KSBallConfigurationSectionLayout:
             return [self layoutCellForRow:indexPath.row];
+        case KSBallConfigurationSectionFloatingSplit:
+            return [self floatingSplitCell];
         case KSBallConfigurationSectionShortcuts:
             return [self shortcutCellForRow:indexPath.row];
         case KSBallConfigurationSectionKeyboard:
@@ -318,7 +325,11 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     floatingSwitch.on = shortcut.opensInFloatingWindow;
     floatingSwitch.accessibilityLabel = [NSString stringWithFormat:@"%@ 以悬浮窗打开", shortcut.displayName];
     cell.textLabel.text = shortcut.displayName;
-    cell.detailTextLabel.text = shortcut.opensInFloatingWindow ? [NSString stringWithFormat:@"悬浮窗打开 · %@", shortcut.bundleIdentifier] : shortcut.bundleIdentifier;
+    if (shortcut.opensInFloatingWindow && !self.settingsStore.settings.floatingSplitEnabled) {
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"总开关关闭，暂按全屏打开 · %@", shortcut.bundleIdentifier];
+    } else {
+        cell.detailTextLabel.text = shortcut.opensInFloatingWindow ? [NSString stringWithFormat:@"悬浮窗打开 · %@", shortcut.bundleIdentifier] : shortcut.bundleIdentifier;
+    }
     cell.imageView.image = [self listIconForBundleIdentifier:shortcut.bundleIdentifier];
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
@@ -338,6 +349,20 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     cell.textLabel.text = @"悬浮分屏";
     cell.detailTextLabel.text = self.hudSceneCoordinator.floatingHostStatusDescription;
     cell.detailTextLabel.numberOfLines = 0;
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    return cell;
+}
+
+- (UITableViewCell *)floatingSplitCell {
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"FloatingSplitCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"FloatingSplitCell"];
+    UISwitch *toggle = [cell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)cell.accessoryView : nil;
+    if (!toggle) {
+        toggle = [UISwitch new];
+        [toggle addTarget:self action:@selector(toggleFloatingSplit:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = toggle;
+    }
+    toggle.on = self.settingsStore.settings.floatingSplitEnabled;
+    cell.textLabel.text = @"启用悬浮分屏";
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
 }
@@ -445,6 +470,12 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 - (void)toggleHUD:(UISwitch *)sender {
     [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
         settings.enabled = sender.isOn;
+    }];
+}
+
+- (void)toggleFloatingSplit:(UISwitch *)sender {
+    [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
+        settings.floatingSplitEnabled = sender.isOn;
     }];
 }
 

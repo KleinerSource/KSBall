@@ -162,7 +162,7 @@ static void KSBallSetFloatingHostStatus(NSString *status) {
 // 让 HUD 进程像 FrontBoardAppLauncher 那样成为 FrontBoard 场景宿主，才能托管其它应用的场景。
 // 必须在 UIKit 初始化之前调用；只在有应用设为悬浮窗打开时执行，其余情况 HUD 的启动路径保持不变。
 static void KSBallInitializeFloatingAppHosting(void) {
-    if (!KSBallSettingsStore.sharedStore.settings.hasFloatingWindowShortcuts) {
+    if (!KSBallSettingsStore.sharedStore.settings.shouldEnableFloatingAppHosting) {
         [KSBallSharedStorage removeDataForKey:KSBallFloatingHostStatusStorageKey];
         return;
     }
@@ -417,8 +417,8 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
 @property (nonatomic) unsigned int accessibilityWindowContextIdentifier;
 @property (nonatomic) BOOL accessibilityWindowRegistered;
 @property (nonatomic) BOOL hudProcessStopping;
-/// HUD 子进程启动时是否有应用设为悬浮窗打开；变化时需要重建 HUD 以初始化或撤销悬浮分屏宿主。
-@property (nonatomic) BOOL appliedFloatingWindowShortcuts;
+/// HUD 子进程启动时是否应启用悬浮应用宿主；变化时需要重建 HUD 以初始化或撤销宿主。
+@property (nonatomic) BOOL appliedFloatingAppHostingEnabled;
 @property (nonatomic, copy) NSString *statusDescription;
 
 - (BOOL)registerHUDWindowWithAccessibilityHost:(UIWindow *)window;
@@ -450,7 +450,7 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
         _settingsStore = settingsStore;
         _applicationBridge = applicationBridge;
         _statusDescription = @"尚未启动 HUD。";
-        _appliedFloatingWindowShortcuts = settingsStore.settings.hasFloatingWindowShortcuts;
+        _appliedFloatingAppHostingEnabled = settingsStore.settings.shouldEnableFloatingAppHosting;
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(settingsDidChange:) name:KSBallSettingsDidChangeNotification object:settingsStore];
     }
     return self;
@@ -749,13 +749,20 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
             [self deactivateHUD];
             exit(EXIT_SUCCESS);
         }
+        BOOL floatingAppHostingEnabled = self.settingsStore.settings.shouldEnableFloatingAppHosting;
+        BOOL floatingHostChanged = floatingAppHostingEnabled != self.appliedFloatingAppHostingEnabled;
+        self.appliedFloatingAppHostingEnabled = floatingAppHostingEnabled;
+        if (floatingHostChanged) {
+            [self deactivateHUD];
+            exit(EXIT_SUCCESS);
+        }
         [self updateHUDWindowLevelForKeyboardPresentationMode];
         return;
     }
     if (self.settingsStore.settings.enabled) {
-        BOOL floatingWindowShortcuts = self.settingsStore.settings.hasFloatingWindowShortcuts;
-        BOOL floatingHostChanged = floatingWindowShortcuts != self.appliedFloatingWindowShortcuts;
-        self.appliedFloatingWindowShortcuts = floatingWindowShortcuts;
+        BOOL floatingWindowShortcuts = self.settingsStore.settings.shouldEnableFloatingAppHosting;
+        BOOL floatingHostChanged = floatingWindowShortcuts != self.appliedFloatingAppHostingEnabled;
+        self.appliedFloatingAppHostingEnabled = floatingWindowShortcuts;
         // 悬浮分屏宿主只能在 HUD 子进程启动时初始化，开关从无到有或从有到无都要重建一次。
         if (floatingHostChanged && [self hasLiveHUDProcess]) {
             [self rebuildHUD];
@@ -781,6 +788,9 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
 }
 
 - (NSString *)floatingHostStatusDescription {
+    if (!self.settingsStore.settings.floatingSplitEnabled) {
+        return @"已关闭：快捷应用将全屏打开，悬浮分屏宿主不会启动。";
+    }
     if (!self.settingsStore.settings.hasFloatingWindowShortcuts) {
         return @"未启用：在快捷应用右侧打开开关后，该应用会以悬浮窗打开。";
     }

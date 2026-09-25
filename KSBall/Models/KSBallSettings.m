@@ -72,6 +72,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 + (instancetype)defaultSettings {
     KSBallSettings *settings = [self new];
     settings.enabled = YES;
+    settings.floatingSplitEnabled = YES;
     settings.edge = KSBallEdgeRight;
     settings.normalizedVerticalPosition = 0.5;
     settings.shortcuts = [NSMutableArray array];
@@ -97,6 +98,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 - (id)copyWithZone:(NSZone *)zone {
     KSBallSettings *copy = [[[self class] allocWithZone:zone] init];
     copy.enabled = self.enabled;
+    copy.floatingSplitEnabled = self.floatingSplitEnabled;
     copy.edge = self.edge;
     copy.normalizedVerticalPosition = self.normalizedVerticalPosition;
     copy.iconSize = self.iconSize;
@@ -156,6 +158,10 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     return NO;
 }
 
+- (BOOL)shouldEnableFloatingAppHosting {
+    return self.floatingSplitEnabled && self.hasFloatingWindowShortcuts;
+}
+
 - (NSDictionary<NSString *,id> *)dictionaryRepresentation {
     [self normalize];
     NSMutableArray<NSDictionary<NSString *, id> *> *shortcuts = [NSMutableArray arrayWithCapacity:self.shortcuts.count];
@@ -165,6 +171,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     return @{
         @"schemaVersion": @(KSBallSettingsSchemaVersion),
         @"enabled": @(self.enabled),
+        @"floatingSplitEnabled": @(self.floatingSplitEnabled),
         @"edge": @(self.edge),
         @"normalizedVerticalPosition": @(self.normalizedVerticalPosition),
         @"iconSize": @(self.iconSize),
@@ -189,6 +196,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         return [dictionary[key] isKindOfClass:NSNumber.class] ? dictionary[key] : nil;
     };
     NSNumber *enabled = number(@"enabled");
+    NSNumber *floatingSplitEnabled = number(@"floatingSplitEnabled");
     NSNumber *edge = number(@"edge");
     NSNumber *verticalPosition = number(@"normalizedVerticalPosition");
     NSNumber *iconSize = number(@"iconSize");
@@ -201,6 +209,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     NSNumber *keyboardPresentationMode = number(@"keyboardPresentationMode");
     NSNumber *backdropBlur = number(@"backdropBlur");
     if (enabled) settings.enabled = enabled.boolValue;
+    if (floatingSplitEnabled) settings.floatingSplitEnabled = floatingSplitEnabled.boolValue;
     if (edge) settings.edge = edge.integerValue;
     if (verticalPosition) settings.normalizedVerticalPosition = verticalPosition.doubleValue;
     if (iconSize) settings.iconSize = iconSize.doubleValue;

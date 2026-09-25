@@ -750,8 +750,9 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
             [self.floatingWindowManager openShortcut:shortcut icon:icon fromPoint:[self barCenter]];
             return;
         }
-        // 宿主不可用时退回全屏启动，不让用户的操作落空。
-        [self showFeedback:@"悬浮分屏不可用，已全屏打开"];
+        // 总开关关闭或宿主不可用时退回全屏启动，不让用户的操作落空。
+        NSString *message = self.settingsStore.settings.floatingSplitEnabled ? @"悬浮分屏不可用，已全屏打开" : @"悬浮分屏总开关已关闭，已全屏打开";
+        [self showFeedback:message];
     }
     if (![self.applicationBridge launchBundleIdentifier:shortcut.bundleIdentifier]) {
         [self showFeedback:@"应用不可用或无法启动"];
