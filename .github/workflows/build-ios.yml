@@ -48,6 +48,16 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
+      # 资源目录引用的 AppIcon.png 缺失时 Xcode 不会报错，只会静默产出没有图标的应用。
+      - name: Generate app icon if missing
+        run: |
+          set -euo pipefail
+          icon_path="KSBall/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+          if [[ ! -f "$icon_path" ]]; then
+            python3 Scripts/generate_app_icon.py
+          fi
+          test -f "$icon_path"
+
       - name: Build Release app
         env:
           DERIVED_DATA: ${{ runner.temp }}/KSBallDerivedData
@@ -88,6 +98,14 @@ jobs:
           executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
           executable_path="$app_path/$executable_name"
           test -f "$executable_path"
+          # 确认资源目录编译出了主屏图标：Info.plist 登记了 CFBundleIcons，且 Assets.car 与图标文件都在包内。
+          if ! icon_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName' "$app_path/Info.plist")"; then
+            echo "::error title=Missing app icon::CFBundleIcons was not generated into Info.plist"
+            exit 1
+          fi
+          test -f "$app_path/Assets.car" || { echo "::error title=Missing app icon::Assets.car was not produced"; exit 1; }
+          ls "$app_path"/AppIcon*.png >/dev/null 2>&1 || { echo "::error title=Missing app icon::No AppIcon*.png in the app bundle"; exit 1; }
+          echo "App icon: $icon_name"; ls "$app_path"/AppIcon*.png
           entitlements_path="$GITHUB_WORKSPACE/KSBall/KSBall.entitlements"
           test -f "$entitlements_path"
           mkdir -p artifact/Payload
