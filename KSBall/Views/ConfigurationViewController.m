@@ -106,7 +106,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     switch (section) {
-        case KSBallConfigurationSectionHUD: return 2;
+        case KSBallConfigurationSectionHUD: return 1;
         case KSBallConfigurationSectionAppearance: return KSBallAppearanceRowCount;
         case KSBallConfigurationSectionLayout: return KSBallLayoutRowCount;
         case KSBallConfigurationSectionShortcuts: return KSBallShortcutActionRowCount + self.settingsStore.settings.shortcuts.count;
@@ -153,7 +153,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     switch (indexPath.section) {
         case KSBallConfigurationSectionHUD:
-            return indexPath.row == 0 ? [self enabledCell] : [self rebuildCell];
+            return [self enabledCell];
         case KSBallConfigurationSectionAppearance:
             return [self appearanceCellForRow:indexPath.row];
         case KSBallConfigurationSectionLayout:
@@ -180,14 +180,6 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     }
     toggle.on = self.settingsStore.settings.enabled;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    return cell;
-}
-
-- (UITableViewCell *)rebuildCell {
-    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"RebuildHUDCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"RebuildHUDCell"];
-    cell.textLabel.text = @"重新创建悬浮条";
-    cell.detailTextLabel.text = self.hudSceneCoordinator.isHUDActive ? @"已显示" : @"立即重试";
-    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     return cell;
 }
 
@@ -393,9 +385,6 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
             ShortcutArrangementViewController *arrangement = [[ShortcutArrangementViewController alloc] initWithSettingsStore:self.settingsStore applicationBridge:self.applicationBridge];
             [self presentViewController:arrangement animated:YES completion:nil];
         }
-    } else if (indexPath.section == KSBallConfigurationSectionHUD && indexPath.row == 1) {
-        [self.hudSceneCoordinator rebuildHUD];
-        [self.tableView reloadData];
     } else if (indexPath.section == KSBallConfigurationSectionUpdate && indexPath.row == KSBallUpdateRowCheck) {
         [self checkForUpdatesManually];
     }

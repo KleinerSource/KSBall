@@ -22,7 +22,7 @@ KSBall 是一个仅面向 TrollStore 的 iPhone 全局快捷启动器。启动 K
 
 - 支持 iOS 15 起的系统；实际安装前应确认设备系统受当前 TrollStore 版本支持。
 - 全局 HUD 依赖 SpringBoard accessibility window hosting 私有接口和 TrollStore 权限，不可通过 App Store 发布。HUD 子进程沿用 TrollSpeed 的插件模式启动方式，不使用 UIScene。
-- 设备重启、注销 SpringBoard（respring）或用户在应用切换器中强制结束 KSBall 后，需要从主屏重新打开一次。
+- 注销 SpringBoard（respring）后悬浮条会自动重新注册并恢复；设备重启或用户在应用切换器中强制结束 KSBall 后，需要从主屏重新打开一次。
 - HUD 窗口固定为竖屏坐标系，横屏时悬浮条仍位于竖屏方向的左右边缘。
 - 主屏上隐藏或禁止启动的系统应用不会列出；可手动输入 Bundle ID 添加未枚举到的入口。
 - 悬浮分屏依赖 FrontBoard / RunningBoard 私有接口，下面几点是已知限制：
