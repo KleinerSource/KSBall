@@ -3,3 +3,6 @@ build/
 DerivedData/
 *.xcuserstate
 xcuserdata/
+findings.md
+progress.md
+task_plan.md
