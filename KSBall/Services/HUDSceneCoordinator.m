@@ -25,6 +25,7 @@
 static const char * const KSBallHUDProcessArgument = "-hud";
 static const char * const KSBallStopProcessArgument = "-stop-hud";
 static NSString * const KSBallHUDProcessIdentifierDefaultsKey = @"KSBallHUDProcessIdentifier";
+static NSString * const KSBallHUDCapabilityVersionDefaultsKey = @"KSBallHUDCapabilityVersion";
 static NSString * const KSBallHUDReadyProcessIdentifierStorageKey = @"HUDReadyProcessIdentifier";
 static NSString * const KSBallHUDStatusDescriptionStorageKey = @"HUDStatusDescription";
 static NSString * const KSBallFloatingHostStatusStorageKey = @"FloatingHostStatus";
@@ -427,6 +428,8 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
 - (void)stopHUDProcessWithCompletion:(nullable dispatch_block_t)completion;
 - (void)rebuildHUD;
 - (BOOL)spawnHUDProcess;
+- (nullable NSString *)currentHUDCapabilityVersion;
+- (BOOL)requiresHUDCapabilityRefresh;
 - (pid_t)spawnStopProcessForProcessIdentifier:(pid_t)processIdentifier;
 - (BOOL)hasLiveHUDProcess;
 @end
@@ -554,10 +557,34 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
     }
 
     if ([self hasLiveHUDProcess]) {
+        if ([self requiresHUDCapabilityRefresh]) {
+            self.statusDescription = @"检测到 app 能力版本更新，正在重启 HUD 宿主。";
+            [self rebuildHUD];
+            return;
+        }
         self.statusDescription = @"HUD 子进程已在运行。";
         return;
     }
     [self spawnHUDProcess];
+}
+
+- (nullable NSString *)currentHUDCapabilityVersion {
+    NSDictionary<NSString *, id> *info = NSBundle.mainBundle.infoDictionary;
+    NSString *shortVersion = [info[@"CFBundleShortVersionString"] isKindOfClass:NSString.class] ? info[@"CFBundleShortVersionString"] : nil;
+    NSString *buildVersion = [info[@"CFBundleVersion"] isKindOfClass:NSString.class] ? info[@"CFBundleVersion"] : nil;
+    if (buildVersion.length == 0) {
+        return nil;
+    }
+    return [NSString stringWithFormat:@"%@+%@", shortVersion ?: @"", buildVersion];
+}
+
+- (BOOL)requiresHUDCapabilityRefresh {
+    NSString *currentVersion = [self currentHUDCapabilityVersion];
+    if (currentVersion.length == 0) {
+        return NO;
+    }
+    NSString *lastStartedVersion = [NSUserDefaults.standardUserDefaults stringForKey:KSBallHUDCapabilityVersionDefaultsKey];
+    return lastStartedVersion.length == 0 || ![lastStartedVersion isEqualToString:currentVersion];
 }
 
 - (void)rebuildHUD {
@@ -823,6 +850,10 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
     }
 
     [NSUserDefaults.standardUserDefaults setInteger:processIdentifier forKey:KSBallHUDProcessIdentifierDefaultsKey];
+    NSString *capabilityVersion = [self currentHUDCapabilityVersion];
+    if (capabilityVersion.length > 0) {
+        [NSUserDefaults.standardUserDefaults setObject:capabilityVersion forKey:KSBallHUDCapabilityVersionDefaultsKey];
+    }
     [NSUserDefaults.standardUserDefaults synchronize];
     if (usedNormalFallback && personaFailure.length > 0) {
         self.statusDescription = [NSString stringWithFormat:@"HUD 子进程已启动（PID %d，普通模式；persona 不可用：%@）。", processIdentifier, personaFailure];
