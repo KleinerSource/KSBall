@@ -7,9 +7,9 @@ static const CGFloat KSBallFloatingButtonSize = 28.0;
 static const CGFloat KSBallFloatingResizeHandleSize = 28.0;
 static const CGFloat KSBallFloatingPlaceholderIconSize = 56.0;
 static const CGFloat KSBallFloatingBadgeIconSize = 22.0;
-// 缩略图向收纳区外侧甩出超过该距离或速度时关闭窗口。
-static const CGFloat KSBallFloatingDismissDistance = 44.0;
-static const CGFloat KSBallFloatingDismissVelocity = 600.0;
+// 收纳区缩略图向外甩出超过该距离或速度时收起整个边栏。
+static const CGFloat KSBallFloatingDockCollapseDistance = 44.0;
+static const CGFloat KSBallFloatingDockCollapseVelocity = 600.0;
 
 @interface FloatingAppWindowView ()
 @property (nonatomic, readwrite) CGSize screenSize;
@@ -168,7 +168,7 @@ static const CGFloat KSBallFloatingDismissVelocity = 600.0;
 }
 
 - (void)buildMinimizedOverlayWithIcon:(UIImage *)icon {
-    // 收起后覆盖整个缩略图：吃掉触摸，避免误操作到被缩小的应用，点按恢复，向外甩出关闭。
+    // 收起后覆盖整个缩略图：吃掉触摸，避免误操作到被缩小的应用，点按恢复，向外甩出收起边栏。
     self.minimizedOverlayView = [UIView new];
     self.minimizedOverlayView.backgroundColor = UIColor.clearColor;
     self.minimizedOverlayView.hidden = YES;
@@ -384,20 +384,20 @@ static const CGFloat KSBallFloatingDismissVelocity = 600.0;
             break;
         case UIGestureRecognizerStateEnded: {
             CGFloat velocity = [recognizer velocityInView:self.superview].x * direction;
-            if (outward > KSBallFloatingDismissDistance || velocity > KSBallFloatingDismissVelocity) {
-                [self.delegate floatingAppWindowViewDidRequestClose:self];
+            if (outward > KSBallFloatingDockCollapseDistance || velocity > KSBallFloatingDockCollapseVelocity) {
+                [self.delegate floatingAppWindowViewDidRequestHideDock:self];
                 break;
             }
-            [UIView animateWithDuration:0.25 delay:0.0 usingSpringWithDamping:0.8 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+            [UIView animateWithDuration:0.25 delay:0.0 usingSpringWithDamping:0.8 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
                 self.transform = CGAffineTransformIdentity;
             } completion:nil];
             break;
         }
         case UIGestureRecognizerStateCancelled:
         case UIGestureRecognizerStateFailed: {
-            [UIView animateWithDuration:0.2 animations:^{
+            [UIView animateWithDuration:0.2 delay:0.0 options:UIViewAnimationOptionAllowUserInteraction animations:^{
                 self.transform = CGAffineTransformIdentity;
-            }];
+            } completion:nil];
             break;
         }
         default:

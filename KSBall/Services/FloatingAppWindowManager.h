@@ -9,7 +9,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface FloatingAppWindowManager : NSObject
 
 @property (nonatomic, copy, nullable) void (^feedbackHandler)(NSString *message);
-/// 窗口增删、收起、恢复或整体隐藏后回调，HUD 据此刷新可接收触摸的区域。
+/// 窗口增删、收起、恢复、边栏隐藏或整体隐藏后回调，HUD 据此刷新可接收触摸的区域。
 @property (nonatomic, copy, nullable) dispatch_block_t interactiveViewsDidChangeHandler;
 /// 需要接收触摸的窗口与收纳区底板；整体隐藏时为空。
 @property (nonatomic, copy, readonly) NSArray<UIView *> *interactiveViews;

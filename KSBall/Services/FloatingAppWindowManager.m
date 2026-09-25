@@ -7,6 +7,8 @@
 #import "SystemApplicationBridge.h"
 
 static const CGFloat KSBallFloatingDockPlateCornerRadius = 14.0;
+static const CGFloat KSBallFloatingDockHandleWidth = 30.0;
+static const CGFloat KSBallFloatingDockHandleHeight = 54.0;
 // 应用退出后先显示提示，停留片刻再关闭窗口。
 static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
 
@@ -28,9 +30,16 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
 /// 收纳区中的窗口，按收起的先后顺序从上往下排列。
 @property (nonatomic, strong) NSMutableArray<KSBallFloatingWindowEntry *> *minimizedEntries;
 @property (nonatomic, strong) UIVisualEffectView *dockPlateView;
+@property (nonatomic, strong) UIView *dockHandleView;
+@property (nonatomic, strong) UIImageView *dockHandleIconView;
 @property (nonatomic) KSBallEdge dockEdge;
 @property (nonatomic) BOOL windowsHidden;
+@property (nonatomic) BOOL dockCollapsed;
+@property (nonatomic) CGFloat dockHandleCenterY;
 - (void)minimizeExpandedEntriesExcept:(nullable KSBallFloatingWindowEntry *)focusedEntry;
+- (void)collapseDock;
+- (void)expandDock;
+- (void)layoutDockHandle;
 @end
 
 @implementation FloatingAppWindowManager
@@ -54,6 +63,26 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
         _dockPlateView.alpha = 0.0;
         KSBallSetLayerHitTestsAsOpaque(_dockPlateView.layer, YES);
         [containerView addSubview:_dockPlateView];
+
+        _dockHandleView = [UIView new];
+        _dockHandleView.backgroundColor = UIColor.secondarySystemBackgroundColor;
+        _dockHandleView.layer.cornerRadius = 12.0;
+        _dockHandleView.layer.cornerCurve = kCACornerCurveContinuous;
+        _dockHandleView.layer.borderWidth = 0.5;
+        _dockHandleView.layer.borderColor = UIColor.separatorColor.CGColor;
+        _dockHandleView.isAccessibilityElement = YES;
+        _dockHandleView.accessibilityLabel = @"显示悬浮应用边栏";
+        _dockHandleView.accessibilityTraits = UIAccessibilityTraitButton;
+        _dockHandleView.hidden = YES;
+        KSBallSetLayerHitTestsAsOpaque(_dockHandleView.layer, YES);
+        _dockHandleIconView = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"chevron.left"]];
+        _dockHandleIconView.contentMode = UIViewContentModeScaleAspectFit;
+        _dockHandleIconView.tintColor = UIColor.secondaryLabelColor;
+        [_dockHandleView addSubview:_dockHandleIconView];
+        UITapGestureRecognizer *showDockRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(expandDock)];
+        showDockRecognizer.cancelsTouchesInView = NO;
+        [_dockHandleView addGestureRecognizer:showDockRecognizer];
+        [containerView addSubview:_dockHandleView];
     }
     return self;
 }
@@ -90,10 +119,13 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     }
     NSMutableArray<UIView *> *views = [NSMutableArray arrayWithCapacity:self.entries.count + 1];
     for (KSBallFloatingWindowEntry *entry in self.entries) {
+        if (self.dockCollapsed && [self isEntryMinimized:entry]) {
+            continue;
+        }
         [views addObject:entry.windowView];
     }
     if (self.minimizedEntries.count > 0) {
-        [views addObject:self.dockPlateView];
+        [views addObject:self.dockCollapsed ? self.dockHandleView : self.dockPlateView];
     }
     return views;
 }
@@ -250,7 +282,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
         [self updateDockPlateVisibility];
     };
     if (animated) {
-        [UIView animateWithDuration:0.22 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:changes completion:completion];
+        [UIView animateWithDuration:0.22 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:changes completion:completion];
     } else {
         changes();
         completion(YES);
@@ -288,8 +320,11 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     [self.minimizedEntries addObject:entry];
     entry.windowView.minimizedEdge = self.dockEdge;
     [self.containerView bringSubviewToFront:entry.windowView];
+    if (self.dockCollapsed) {
+        [self.containerView bringSubviewToFront:self.dockHandleView];
+    }
     [self updateDockPlateVisibility];
-    [UIView animateWithDuration:0.4 delay:0.0 usingSpringWithDamping:0.85 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+    [UIView animateWithDuration:0.4 delay:0.0 usingSpringWithDamping:0.85 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
         entry.windowView.minimized = YES;
         [self layoutDock];
         [entry.windowView layoutIfNeeded];
@@ -318,9 +353,13 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     }
     [self minimizeExpandedEntriesExcept:entry];
     [self.minimizedEntries removeObjectIdenticalTo:entry];
+    if (self.minimizedEntries.count == 0) {
+        self.dockCollapsed = NO;
+        self.dockHandleView.hidden = YES;
+    }
     [self.containerView insertSubview:entry.windowView belowSubview:self.dockPlateView];
     CGRect frame = [self clampedFrame:entry.restoredFrame];
-    [UIView animateWithDuration:0.4 delay:0.0 usingSpringWithDamping:0.85 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+    [UIView animateWithDuration:0.4 delay:0.0 usingSpringWithDamping:0.85 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
         entry.windowView.minimized = NO;
         entry.windowView.frame = frame;
         [entry.windowView layoutIfNeeded];
@@ -337,24 +376,82 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     CGRect bounds = [self bounds];
     UIEdgeInsets safeAreaInsets = [self safeAreaInsets];
     [self.minimizedEntries enumerateObjectsUsingBlock:^(KSBallFloatingWindowEntry * _Nonnull entry, NSUInteger index, BOOL * _Nonnull stop) {
-        entry.windowView.frame = [KSBallFloatingWindowLayout dockSlotFrameAtIndex:index edge:self.dockEdge screenSize:screenSize bounds:bounds safeAreaInsets:safeAreaInsets];
+        CGRect frame = [KSBallFloatingWindowLayout dockSlotFrameAtIndex:index edge:self.dockEdge screenSize:screenSize bounds:bounds safeAreaInsets:safeAreaInsets];
+        if (self.dockCollapsed) {
+            frame.origin.x = self.dockEdge == KSBallEdgeLeft ? CGRectGetMinX(bounds) - CGRectGetWidth(frame) : CGRectGetMaxX(bounds);
+        }
+        entry.windowView.frame = frame;
     }];
     NSUInteger count = self.minimizedEntries.count;
     if (count > 0) {
-        self.dockPlateView.frame = [KSBallFloatingWindowLayout dockPlateFrameForCount:count edge:self.dockEdge screenSize:screenSize bounds:bounds safeAreaInsets:safeAreaInsets];
+        CGRect frame = [KSBallFloatingWindowLayout dockPlateFrameForCount:count edge:self.dockEdge screenSize:screenSize bounds:bounds safeAreaInsets:safeAreaInsets];
+        if (self.dockCollapsed) {
+            frame.origin.x = self.dockEdge == KSBallEdgeLeft ? CGRectGetMinX(bounds) - CGRectGetWidth(frame) : CGRectGetMaxX(bounds);
+        }
+        self.dockPlateView.frame = frame;
     }
-    self.dockPlateView.alpha = count > 0 ? 1.0 : 0.0;
+    self.dockPlateView.alpha = count > 0 && !self.dockCollapsed ? 1.0 : 0.0;
+}
+
+- (void)layoutDockHandle {
+    CGRect bounds = [self bounds];
+    CGRect safeBounds = UIEdgeInsetsInsetRect(bounds, [self safeAreaInsets]);
+    CGFloat minY = CGRectGetMinY(safeBounds);
+    CGFloat maxY = MAX(minY, CGRectGetMaxY(safeBounds) - KSBallFloatingDockHandleHeight);
+    CGFloat y = self.dockHandleCenterY - KSBallFloatingDockHandleHeight / 2.0;
+    y = MIN(MAX(y, minY), maxY);
+    CGFloat x = self.dockEdge == KSBallEdgeLeft ? CGRectGetMinX(bounds) : CGRectGetMaxX(bounds) - KSBallFloatingDockHandleWidth;
+    self.dockHandleView.frame = CGRectMake(x, y, KSBallFloatingDockHandleWidth, KSBallFloatingDockHandleHeight);
+    self.dockHandleIconView.frame = CGRectMake(9.0, 20.0, 12.0, 14.0);
+    NSString *symbol = self.dockEdge == KSBallEdgeLeft ? @"chevron.right" : @"chevron.left";
+    self.dockHandleIconView.image = [UIImage systemImageNamed:symbol];
+}
+
+- (void)collapseDock {
+    if (self.dockCollapsed || self.minimizedEntries.count == 0) {
+        return;
+    }
+    self.dockHandleCenterY = CGRectGetMidY(self.dockPlateView.frame);
+    self.dockCollapsed = YES;
+    self.dockHandleView.hidden = NO;
+    [self layoutDockHandle];
+    [self.containerView bringSubviewToFront:self.dockHandleView];
+    [self notifyInteractiveViewsDidChange];
+    [UIView animateWithDuration:0.28 delay:0.0 usingSpringWithDamping:0.9 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
+        for (KSBallFloatingWindowEntry *entry in self.minimizedEntries) {
+            entry.windowView.transform = CGAffineTransformIdentity;
+        }
+        [self layoutDock];
+    } completion:nil];
+}
+
+- (void)expandDock {
+    if (!self.dockCollapsed || self.minimizedEntries.count == 0) {
+        return;
+    }
+    self.dockCollapsed = NO;
+    self.dockHandleView.hidden = YES;
+    self.dockPlateView.hidden = NO;
+    [self notifyInteractiveViewsDidChange];
+    [UIView animateWithDuration:0.28 delay:0.0 usingSpringWithDamping:0.9 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
+        [self layoutDock];
+    } completion:nil];
 }
 
 // 底板按不透明拦截触摸，透明度为 0 时也会挡住下层，必须真正隐藏。
 - (void)updateDockPlateVisibility {
     BOOL visible = self.minimizedEntries.count > 0;
+    if (!visible) {
+        self.dockCollapsed = NO;
+        self.dockHandleView.hidden = YES;
+    }
     if (visible && self.dockPlateView.hidden) {
         CGSize screenSize = [self screenSize];
         self.dockPlateView.frame = [KSBallFloatingWindowLayout dockPlateFrameForCount:1 edge:self.dockEdge screenSize:screenSize bounds:[self bounds] safeAreaInsets:[self safeAreaInsets]];
         self.dockPlateView.alpha = 0.0;
     }
     self.dockPlateView.hidden = !visible;
+    self.dockHandleView.hidden = !visible || !self.dockCollapsed;
     [self notifyInteractiveViewsDidChange];
 }
 
@@ -383,6 +480,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     }
     _userInterfaceStyle = userInterfaceStyle;
     self.dockPlateView.overrideUserInterfaceStyle = userInterfaceStyle;
+    self.dockHandleView.overrideUserInterfaceStyle = userInterfaceStyle;
     for (KSBallFloatingWindowEntry *entry in self.entries) {
         entry.windowView.overrideUserInterfaceStyle = userInterfaceStyle;
         [entry.host updateUserInterfaceStyle:userInterfaceStyle];
@@ -421,6 +519,13 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     }
 }
 
+- (void)floatingAppWindowViewDidRequestHideDock:(FloatingAppWindowView *)windowView {
+    KSBallFloatingWindowEntry *entry = [self entryForWindowView:windowView];
+    if (entry && [self isEntryMinimized:entry]) {
+        [self collapseDock];
+    }
+}
+
 - (void)floatingAppWindowViewDidBeginInteraction:(FloatingAppWindowView *)windowView {
     KSBallFloatingWindowEntry *entry = [self entryForWindowView:windowView];
     if (entry) {
@@ -439,7 +544,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
         return;
     }
     CGRect frame = [self clampedFrame:windowView.frame];
-    [UIView animateWithDuration:0.3 delay:0.0 usingSpringWithDamping:0.85 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+    [UIView animateWithDuration:0.3 delay:0.0 usingSpringWithDamping:0.85 initialSpringVelocity:0.0 options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction animations:^{
         windowView.frame = frame;
         [windowView layoutIfNeeded];
     } completion:nil];

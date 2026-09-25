@@ -10,6 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)floatingAppWindowViewDidRequestMinimize:(FloatingAppWindowView *)windowView;
 - (void)floatingAppWindowViewDidRequestFullScreen:(FloatingAppWindowView *)windowView;
 - (void)floatingAppWindowViewDidRequestRestore:(FloatingAppWindowView *)windowView;
+- (void)floatingAppWindowViewDidRequestHideDock:(FloatingAppWindowView *)windowView;
 /// 开始拖动、缩放或点到窗口外框时回调，用于把窗口移到最前。
 - (void)floatingAppWindowViewDidBeginInteraction:(FloatingAppWindowView *)windowView;
 /// 拖动或缩放结束后回调，由管理器决定收进收纳区还是收回可见范围。
@@ -23,7 +24,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, weak, nullable) id<FloatingAppWindowViewDelegate> delegate;
 @property (nonatomic, readonly) CGSize screenSize;
 @property (nonatomic, getter=isMinimized) BOOL minimized;
-/// 收起时所在的收纳区一侧，决定缩略图向哪个方向甩出即关闭。
+/// 收起时所在的收纳区一侧，决定缩略图向哪个方向甩出可隐藏整个边栏。
 @property (nonatomic) KSBallEdge minimizedEdge;
 
 - (instancetype)initWithDisplayName:(NSString *)displayName icon:(nullable UIImage *)icon screenSize:(CGSize)screenSize;
