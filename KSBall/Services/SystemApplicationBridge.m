@@ -5,16 +5,16 @@
 @implementation KSBallApplication
 
 - (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(UIImage *)icon {
-    return [self initWithBundleIdentifier:bundleIdentifier displayName:displayName icon:icon systemApplication:NO];
+    return [self initWithBundleIdentifier:bundleIdentifier displayName:displayName icon:icon category:KSBallApplicationCategoryUser];
 }
 
-- (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(UIImage *)icon systemApplication:(BOOL)systemApplication {
+- (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(UIImage *)icon category:(KSBallApplicationCategory)category {
     self = [super init];
     if (self) {
         _bundleIdentifier = [bundleIdentifier copy];
         _displayName = [displayName copy];
         _icon = icon;
-        _systemApplication = systemApplication;
+        _category = category;
     }
     return self;
 }
@@ -100,7 +100,7 @@ UIImage *KSBallListIconImage(UIImage *icon) {
         if (displayName.length == 0) {
             displayName = bundleIdentifier;
         }
-        [applications addObject:[[KSBallApplication alloc] initWithBundleIdentifier:bundleIdentifier displayName:displayName icon:[self iconForProxy:proxy] systemApplication:[self isSystemApplicationProxy:proxy]]];
+        [applications addObject:[[KSBallApplication alloc] initWithBundleIdentifier:bundleIdentifier displayName:displayName icon:[self iconForProxy:proxy] category:[self categoryForProxy:proxy]]];
     }
 
     return [applications sortedArrayUsingComparator:^NSComparisonResult(KSBallApplication *left, KSBallApplication *right) {
@@ -205,13 +205,25 @@ UIImage *KSBallListIconImage(UIImage *icon) {
     return NO;
 }
 
-- (BOOL)isSystemApplicationProxy:(id)proxy {
+// TrollStore 会在应用容器里（与 .app 同级）放置 _TrollStore 标记文件，并把应用注册为 System 类型，
+// 所以必须先检查标记，再按系统类型区分。
+- (KSBallApplicationCategory)categoryForProxy:(id)proxy {
+    SEL bundleURLSelector = NSSelectorFromString(@"bundleURL");
+    if ([proxy respondsToSelector:bundleURLSelector]) {
+        NSURL *bundleURL = ((id (*)(id, SEL))objc_msgSend)(proxy, bundleURLSelector);
+        if ([bundleURL isKindOfClass:NSURL.class]) {
+            NSString *markerPath = [bundleURL.URLByDeletingLastPathComponent URLByAppendingPathComponent:@"_TrollStore"].path;
+            if ([NSFileManager.defaultManager fileExistsAtPath:markerPath]) {
+                return KSBallApplicationCategoryTrollStore;
+            }
+        }
+    }
     SEL selector = NSSelectorFromString(@"isSystemOrInternalApp");
     if ([proxy respondsToSelector:selector] && ((BOOL (*)(id, SEL))objc_msgSend)(proxy, selector)) {
-        return YES;
+        return KSBallApplicationCategorySystem;
     }
     NSString *applicationType = [self stringValueForObject:proxy selectors:@[@"applicationType"]];
-    return [applicationType caseInsensitiveCompare:@"System"] == NSOrderedSame;
+    return [applicationType caseInsensitiveCompare:@"System"] == NSOrderedSame ? KSBallApplicationCategorySystem : KSBallApplicationCategoryUser;
 }
 
 - (UIImage *)iconForProxy:(id)proxy {

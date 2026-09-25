@@ -3,15 +3,21 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+typedef NS_ENUM(NSInteger, KSBallApplicationCategory) {
+    KSBallApplicationCategoryUser = 0,
+    KSBallApplicationCategoryTrollStore = 1,
+    KSBallApplicationCategorySystem = 2,
+};
+
 @interface KSBallApplication : NSObject
 
 @property (nonatomic, copy, readonly) NSString *bundleIdentifier;
 @property (nonatomic, copy, readonly) NSString *displayName;
 @property (nonatomic, strong, readonly, nullable) UIImage *icon;
-@property (nonatomic, readonly, getter=isSystemApplication) BOOL systemApplication;
+@property (nonatomic, readonly) KSBallApplicationCategory category;
 
 - (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(nullable UIImage *)icon;
-- (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(nullable UIImage *)icon systemApplication:(BOOL)systemApplication;
+- (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName icon:(nullable UIImage *)icon category:(KSBallApplicationCategory)category;
 
 @end
 

@@ -6,13 +6,8 @@
 #import <notify.h>
 #import <objc/message.h>
 
-// 悬浮条可见部分：细短条，与屏幕边缘保留 10pt 间隙。
-static const CGFloat KSBallHandleEdgeInset = 10.0;
-static const CGFloat KSBallHandleBarWidth = 4.0;
+// 悬浮条的边距、宽高与可移动范围定义在 KSBallFanLayout 中，与设置页的排序编辑器共用。
 static const CGFloat KSBallHandleActiveBarWidth = 6.0;
-static const CGFloat KSBallHandleBarHeight = 36.0;
-// 可见条与屏幕上下边缘的最小距离，允许把悬浮条拖到四个角落；热区可以超出屏幕。
-static const CGFloat KSBallHandleVerticalInset = 10.0;
 static const CGFloat KSBallDragActivationDistance = 8.0;
 static const CGFloat KSBallPreviewIconSize = 108.0;
 // 配置变化后扇形菜单与触摸范围的预览停留时间。
@@ -234,7 +229,9 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         return;
     }
     KSBallSettings *settings = self.settingsStore.settings;
-    NSString *shortcutIdentifiers = [[settings.shortcuts valueForKey:@"bundleIdentifier"] componentsJoinedByString:@","];
+    // 只比较应用集合，不比较顺序：在设置页的排序编辑器里调整顺序时，悬浮条不必再叠加一份预览。
+    NSArray<NSString *> *sortedIdentifiers = [[settings.shortcuts valueForKey:@"bundleIdentifier"] sortedArrayUsingSelector:@selector(compare:)];
+    NSString *shortcutIdentifiers = [sortedIdentifiers componentsJoinedByString:@","];
     NSString *menuLayoutSignature = [NSString stringWithFormat:@"%.2f|%.2f|%.2f|%@", settings.iconSize, settings.iconSpacing, settings.ringSpacing, shortcutIdentifiers];
     NSString *backdropSignature = [NSString stringWithFormat:@"%ld|%.2f", (long)settings.backdropStyle, settings.backdropBlur];
     BOOL menuLayoutChanged = self.hasAppliedSettings && ![menuLayoutSignature isEqualToString:self.appliedMenuLayoutSignature];
@@ -311,11 +308,11 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 }
 
 - (CGFloat)minimumHandleCenterY {
-    return KSBallHandleVerticalInset + KSBallHandleBarHeight / 2.0;
+    return [KSBallFanLayout minimumHandleCenterYInBounds:self.view.bounds];
 }
 
 - (CGFloat)maximumHandleCenterY {
-    return MAX(CGRectGetHeight(self.view.bounds) - KSBallHandleVerticalInset - KSBallHandleBarHeight / 2.0, [self minimumHandleCenterY]);
+    return [KSBallFanLayout maximumHandleCenterYInBounds:self.view.bounds];
 }
 
 - (CGFloat)currentHandleCenterY {
@@ -402,8 +399,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 }
 
 - (CGRect)menuSafeBounds {
-    UIEdgeInsets insets = self.view.safeAreaInsets;
-    return UIEdgeInsetsInsetRect(self.view.bounds, UIEdgeInsetsMake(insets.top + 8.0, insets.left + 8.0, insets.bottom + 8.0, insets.right + 8.0));
+    return [KSBallFanLayout menuSafeBoundsForBounds:self.view.bounds safeAreaInsets:self.view.safeAreaInsets];
 }
 
 #pragma mark - 扇形菜单

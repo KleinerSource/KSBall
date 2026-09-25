@@ -1,6 +1,11 @@
 #import "KSBallFanLayout.h"
 #import <math.h>
 
+const CGFloat KSBallHandleEdgeInset = 10.0;
+const CGFloat KSBallHandleBarWidth = 4.0;
+const CGFloat KSBallHandleBarHeight = 36.0;
+static const CGFloat KSBallHandleVerticalInset = 10.0;
+
 // 第一圈图标到扇形圆心（把手）的最小距离：半个把手高度加上手指离开把手所需的余量。
 static const CGFloat KSBallFanHandleClearance = 30.0;
 // 每圈张角至少保持四分之一圆；上下空间都不够时整体缩小图标。
@@ -10,6 +15,26 @@ static const CGFloat KSBallFanShrinkFactor = 0.9;
 static const NSUInteger KSBallFanMaximumShrinkAttempts = 16;
 
 @implementation KSBallFanLayout
+
++ (CGFloat)minimumHandleCenterYInBounds:(CGRect)bounds {
+    return CGRectGetMinY(bounds) + KSBallHandleVerticalInset + KSBallHandleBarHeight / 2.0;
+}
+
++ (CGFloat)maximumHandleCenterYInBounds:(CGRect)bounds {
+    return MAX(CGRectGetMaxY(bounds) - KSBallHandleVerticalInset - KSBallHandleBarHeight / 2.0, [self minimumHandleCenterYInBounds:bounds]);
+}
+
++ (CGPoint)handleCenterForEdge:(KSBallEdge)edge normalizedPosition:(CGFloat)normalizedPosition inBounds:(CGRect)bounds {
+    CGFloat minY = [self minimumHandleCenterYInBounds:bounds];
+    CGFloat maxY = [self maximumHandleCenterYInBounds:bounds];
+    CGFloat inset = KSBallHandleEdgeInset + KSBallHandleBarWidth / 2.0;
+    CGFloat x = edge == KSBallEdgeLeft ? CGRectGetMinX(bounds) + inset : CGRectGetMaxX(bounds) - inset;
+    return CGPointMake(x, minY + (maxY - minY) * MIN(MAX(normalizedPosition, 0.0), 1.0));
+}
+
++ (CGRect)menuSafeBoundsForBounds:(CGRect)bounds safeAreaInsets:(UIEdgeInsets)insets {
+    return UIEdgeInsetsInsetRect(bounds, UIEdgeInsetsMake(insets.top + 8.0, insets.left + 8.0, insets.bottom + 8.0, insets.right + 8.0));
+}
 
 + (NSArray<NSValue *> *)centersForItemCount:(NSUInteger)itemCount anchorCenter:(CGPoint)anchorCenter safeBounds:(CGRect)safeBounds edge:(KSBallEdge)edge itemSize:(CGFloat)itemSize itemSpacing:(CGFloat)itemSpacing ringSpacing:(CGFloat)ringSpacing scale:(CGFloat *)scale {
     NSUInteger count = MIN(itemCount, KSBallMaximumShortcuts);

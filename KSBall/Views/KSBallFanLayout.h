@@ -3,7 +3,19 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+// 悬浮条可见部分的几何参数，悬浮窗与设置页中的排序编辑器共用，保证两边位置一致。
+FOUNDATION_EXPORT const CGFloat KSBallHandleEdgeInset;
+FOUNDATION_EXPORT const CGFloat KSBallHandleBarWidth;
+FOUNDATION_EXPORT const CGFloat KSBallHandleBarHeight;
+
 @interface KSBallFanLayout : NSObject
+
+/// 可见悬浮条中心的纵向可移动范围：与屏幕上下边缘保留 10pt，允许拖到四个角落。
++ (CGFloat)minimumHandleCenterYInBounds:(CGRect)bounds;
++ (CGFloat)maximumHandleCenterYInBounds:(CGRect)bounds;
++ (CGPoint)handleCenterForEdge:(KSBallEdge)edge normalizedPosition:(CGFloat)normalizedPosition inBounds:(CGRect)bounds;
+/// 扇形菜单可以占用的区域：安全区再向内收 8pt。
++ (CGRect)menuSafeBoundsForBounds:(CGRect)bounds safeAreaInsets:(UIEdgeInsets)safeAreaInsets;
 
 /// 以把手旁的图标列为圆心逐圈排布图标（内圈优先）。
 /// - 同一圈相邻图标的中心距不小于 itemSize + itemSpacing；

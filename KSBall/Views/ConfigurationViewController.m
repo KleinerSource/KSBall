@@ -2,7 +2,13 @@
 #import "AppPickerViewController.h"
 #import "HUDSceneCoordinator.h"
 #import "KSBallSettingsStore.h"
+#import "KSBallUpdateChecker.h"
+#import "ShortcutArrangementViewController.h"
 #import "SystemApplicationBridge.h"
+
+// 自动检查成功后，这段时间内回到前台不再重复请求 GitHub。
+static const NSTimeInterval KSBallAutomaticUpdateCheckInterval = 6.0 * 60.0 * 60.0;
+static const NSUInteger KSBallUpdateNotesDisplayLimit = 1000;
 
 typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     KSBallConfigurationSectionHUD = 0,
@@ -10,7 +16,8 @@ typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     KSBallConfigurationSectionLayout = 2,
     KSBallConfigurationSectionShortcuts = 3,
     KSBallConfigurationSectionSupport = 4,
-    KSBallConfigurationSectionCount = 5,
+    KSBallConfigurationSectionUpdate = 5,
+    KSBallConfigurationSectionCount = 6,
 };
 
 typedef NS_ENUM(NSInteger, KSBallAppearanceRow) {
@@ -28,22 +35,37 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
     KSBallLayoutRowCount = 3,
 };
 
+// 快捷应用分组开头的两个操作行，其后才是各个应用。
+typedef NS_ENUM(NSInteger, KSBallShortcutActionRow) {
+    KSBallShortcutActionRowAdd = 0,
+    KSBallShortcutActionRowArrange = 1,
+    KSBallShortcutActionRowCount = 2,
+};
+
+typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
+    KSBallUpdateRowCheck = 0,
+    KSBallUpdateRowAutomatic = 1,
+    KSBallUpdateRowCount = 2,
+};
+
 @interface ConfigurationViewController ()
 @property (nonatomic, strong) KSBallSettingsStore *settingsStore;
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
 @property (nonatomic, strong) HUDSceneCoordinator *hudSceneCoordinator;
+@property (nonatomic, strong) KSBallUpdateChecker *updateChecker;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, UIImage *> *listIconsByBundleIdentifier;
 @property (nonatomic) BOOL adjustingSlider;
 @end
 
 @implementation ConfigurationViewController
 
-- (instancetype)initWithSettingsStore:(KSBallSettingsStore *)settingsStore applicationBridge:(SystemApplicationBridge *)applicationBridge hudSceneCoordinator:(HUDSceneCoordinator *)hudSceneCoordinator {
+- (instancetype)initWithSettingsStore:(KSBallSettingsStore *)settingsStore applicationBridge:(SystemApplicationBridge *)applicationBridge hudSceneCoordinator:(HUDSceneCoordinator *)hudSceneCoordinator updateChecker:(KSBallUpdateChecker *)updateChecker {
     self = [super initWithStyle:UITableViewStyleInsetGrouped];
     if (self) {
         _settingsStore = settingsStore;
         _applicationBridge = applicationBridge;
         _hudSceneCoordinator = hudSceneCoordinator;
+        _updateChecker = updateChecker;
         _listIconsByBundleIdentifier = [NSMutableDictionary dictionary];
     }
     return self;
@@ -52,10 +74,9 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"KSBall";
-    self.tableView.allowsSelectionDuringEditing = YES;
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"编辑" style:UIBarButtonItemStylePlain target:self action:@selector(toggleEditing)];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(settingsDidChange:) name:KSBallSettingsDidChangeNotification object:self.settingsStore];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationDidBecomeActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateCheckerDidChange:) name:KSBallUpdateCheckerDidChangeNotification object:self.updateChecker];
 }
 
 - (void)dealloc {
@@ -68,6 +89,11 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
     [self.tableView reloadData];
 }
 
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self checkForUpdatesAutomatically];
+}
+
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
     return KSBallConfigurationSectionCount;
 }
@@ -77,7 +103,8 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
         case KSBallConfigurationSectionHUD: return 2;
         case KSBallConfigurationSectionAppearance: return KSBallAppearanceRowCount;
         case KSBallConfigurationSectionLayout: return KSBallLayoutRowCount;
-        case KSBallConfigurationSectionShortcuts: return self.settingsStore.settings.shortcuts.count + 1;
+        case KSBallConfigurationSectionShortcuts: return KSBallShortcutActionRowCount + self.settingsStore.settings.shortcuts.count;
+        case KSBallConfigurationSectionUpdate: return KSBallUpdateRowCount;
         default: return 1;
     }
 }
@@ -89,6 +116,7 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
         case KSBallConfigurationSectionLayout: return @"菜单布局";
         case KSBallConfigurationSectionShortcuts: return [NSString stringWithFormat:@"快捷应用（%lu/%lu）", (unsigned long)self.settingsStore.settings.shortcuts.count, (unsigned long)KSBallMaximumShortcuts];
         case KSBallConfigurationSectionSupport: return @"系统能力";
+        case KSBallConfigurationSectionUpdate: return @"软件更新";
     }
     return nil;
 }
@@ -102,13 +130,15 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
         case KSBallConfigurationSectionLayout:
             return @"扇形菜单围绕悬浮条逐圈展开，每圈按屏幕可显示的范围和间距放下尽可能多的图标。同圈间距控制一圈内相邻图标的距离，圈间距控制两圈之间的距离。空间不足时会等比缩小图标。";
         case KSBallConfigurationSectionShortcuts:
-            return @"排在前面的入口位于靠近悬浮条的内圈。编辑模式下可删除和排序。";
+            return @"在“调整顺序”中以扇形预览长按拖动图标即可排序，靠前的应用位于靠近悬浮条的内圈。左滑应用可删除。";
+        case KSBallConfigurationSectionSupport:
+            return @"KSBall 只应通过 TrollStore 安装。私有能力不可用时，配置仍会保留。";
         default: {
             // 页面最底部显示版本号与开发者。
             NSDictionary *info = NSBundle.mainBundle.infoDictionary;
             NSString *version = info[@"CFBundleShortVersionString"] ?: @"-";
             NSString *build = info[@"CFBundleVersion"] ?: @"-";
-            return [NSString stringWithFormat:@"KSBall 只应通过 TrollStore 安装。私有能力不可用时，配置仍会保留。\n\nKSBall %@ (%@)\n开发者：KleinerSource", version, build];
+            return [NSString stringWithFormat:@"开启“自动检查更新”后，打开 KSBall 时会检查 GitHub 上的最新构建。更新通过 TrollStore 安装，安装后需要再打开一次 KSBall 以恢复悬浮条。\n\nKSBall %@ (%@)\n开发者：KleinerSource", version, build];
         }
     }
 }
@@ -123,6 +153,8 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
             return [self layoutCellForRow:indexPath.row];
         case KSBallConfigurationSectionShortcuts:
             return [self shortcutCellForRow:indexPath.row];
+        case KSBallConfigurationSectionUpdate:
+            return [self updateCellForRow:indexPath.row];
         default:
             return [self supportCell];
     }
@@ -255,19 +287,25 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
 
 - (UITableViewCell *)shortcutCellForRow:(NSInteger)row {
     NSArray<KSBallShortcut *> *shortcuts = self.settingsStore.settings.shortcuts;
-    if (row == (NSInteger)shortcuts.count) {
-        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"AddCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"AddCell"];
-        cell.textLabel.text = @"添加应用";
-        cell.textLabel.textColor = self.view.tintColor;
-        cell.imageView.image = [UIImage systemImageNamed:@"plus.circle.fill"];
+    if (row < KSBallShortcutActionRowCount) {
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"ActionCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"ActionCell"];
+        BOOL addRow = row == KSBallShortcutActionRowAdd;
+        // 至少两个应用时才有顺序可调。
+        BOOL enabled = addRow || shortcuts.count > 1;
+        cell.textLabel.text = addRow ? @"添加应用" : @"调整顺序";
+        cell.textLabel.textColor = enabled ? self.view.tintColor : UIColor.tertiaryLabelColor;
+        cell.imageView.image = [UIImage systemImageNamed:addRow ? @"plus.circle.fill" : @"circle.grid.cross.fill"];
+        cell.imageView.tintColor = enabled ? self.view.tintColor : UIColor.tertiaryLabelColor;
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectionStyle = enabled ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
         return cell;
     }
-    KSBallShortcut *shortcut = shortcuts[row];
+    KSBallShortcut *shortcut = shortcuts[row - KSBallShortcutActionRowCount];
     UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"ShortcutCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ShortcutCell"];
     cell.textLabel.text = shortcut.displayName;
     cell.detailTextLabel.text = shortcut.bundleIdentifier;
     cell.imageView.image = [self listIconForBundleIdentifier:shortcut.bundleIdentifier];
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
 }
 
@@ -280,15 +318,61 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
     return cell;
 }
 
+- (UITableViewCell *)updateCellForRow:(NSInteger)row {
+    if (row == KSBallUpdateRowAutomatic) {
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"AutomaticUpdateCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"AutomaticUpdateCell"];
+        cell.textLabel.text = @"自动检查更新";
+        UISwitch *toggle = [cell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)cell.accessoryView : nil;
+        if (!toggle) {
+            toggle = [UISwitch new];
+            [toggle addTarget:self action:@selector(toggleAutomaticUpdateCheck:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = toggle;
+        }
+        toggle.on = self.updateChecker.automaticCheckEnabled;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        return cell;
+    }
+
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"CheckUpdateCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"CheckUpdateCell"];
+    cell.textLabel.text = @"检查更新";
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    [self configureCheckUpdateCell:cell];
+    return cell;
+}
+
+- (void)configureCheckUpdateCell:(UITableViewCell *)cell {
+    KSBallUpdateChecker *checker = self.updateChecker;
+    KSBallRelease *release = checker.latestRelease;
+    BOOL hasUpdate = !checker.isChecking && release && [checker isUpdateRelease:release];
+    if (checker.isChecking) {
+        cell.detailTextLabel.text = @"正在检查…";
+    } else if (checker.lastError) {
+        cell.detailTextLabel.text = @"检查失败";
+    } else if (release) {
+        cell.detailTextLabel.text = hasUpdate ? [NSString stringWithFormat:@"发现新版本 %@", release.version.displayString] : @"已是最新版本";
+    } else {
+        cell.detailTextLabel.text = nil;
+    }
+    cell.detailTextLabel.textColor = hasUpdate ? self.view.tintColor : UIColor.secondaryLabelColor;
+    [cell setNeedsLayout];
+}
+
 #pragma mark - 交互
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    if (indexPath.section == KSBallConfigurationSectionShortcuts && indexPath.row == (NSInteger)self.settingsStore.settings.shortcuts.count) {
+    if (indexPath.section == KSBallConfigurationSectionShortcuts && indexPath.row == KSBallShortcutActionRowAdd) {
         [self showApplicationPicker];
+    } else if (indexPath.section == KSBallConfigurationSectionShortcuts && indexPath.row == KSBallShortcutActionRowArrange) {
+        if (self.settingsStore.settings.shortcuts.count > 1) {
+            ShortcutArrangementViewController *arrangement = [[ShortcutArrangementViewController alloc] initWithSettingsStore:self.settingsStore applicationBridge:self.applicationBridge];
+            [self presentViewController:arrangement animated:YES completion:nil];
+        }
     } else if (indexPath.section == KSBallConfigurationSectionHUD && indexPath.row == 1) {
         [self.hudSceneCoordinator rebuildHUD];
         [self.tableView reloadData];
+    } else if (indexPath.section == KSBallConfigurationSectionUpdate && indexPath.row == KSBallUpdateRowCheck) {
+        [self checkForUpdatesManually];
     }
 }
 
@@ -306,34 +390,20 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
     [self.navigationController pushViewController:picker animated:YES];
 }
 
-- (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath {
-    return [self isShortcutRowAtIndexPath:indexPath];
-}
-
-- (NSIndexPath *)tableView:(UITableView *)tableView targetIndexPathForMoveFromRowAtIndexPath:(NSIndexPath *)sourceIndexPath toProposedIndexPath:(NSIndexPath *)proposedDestinationIndexPath {
-    NSUInteger shortcutCount = self.settingsStore.settings.shortcuts.count;
-    if (proposedDestinationIndexPath.section != KSBallConfigurationSectionShortcuts || shortcutCount == 0) {
-        return sourceIndexPath;
-    }
-    return [NSIndexPath indexPathForRow:MIN((NSUInteger)proposedDestinationIndexPath.row, shortcutCount - 1) inSection:KSBallConfigurationSectionShortcuts];
-}
-
-- (void)tableView:(UITableView *)tableView moveRowAtIndexPath:(NSIndexPath *)sourceIndexPath toIndexPath:(NSIndexPath *)destinationIndexPath {
-    [self.settingsStore moveShortcutFromIndex:sourceIndexPath.row toIndex:destinationIndexPath.row];
-}
-
+// 左滑删除；排序改在扇形编辑器里完成。
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
     return [self isShortcutRowAtIndexPath:indexPath];
 }
 
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (editingStyle == UITableViewCellEditingStyleDelete) {
-        [self.settingsStore removeShortcutAtIndex:indexPath.row];
+    if (editingStyle == UITableViewCellEditingStyleDelete && [self isShortcutRowAtIndexPath:indexPath]) {
+        [self.settingsStore removeShortcutAtIndex:indexPath.row - KSBallShortcutActionRowCount];
     }
 }
 
 - (BOOL)isShortcutRowAtIndexPath:(NSIndexPath *)indexPath {
-    return indexPath.section == KSBallConfigurationSectionShortcuts && indexPath.row < (NSInteger)self.settingsStore.settings.shortcuts.count;
+    return indexPath.section == KSBallConfigurationSectionShortcuts && indexPath.row >= KSBallShortcutActionRowCount &&
+        indexPath.row < KSBallShortcutActionRowCount + (NSInteger)self.settingsStore.settings.shortcuts.count;
 }
 
 - (void)toggleHUD:(UISwitch *)sender {
@@ -391,6 +461,91 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
     }];
 }
 
+#pragma mark - 软件更新
+
+- (void)toggleAutomaticUpdateCheck:(UISwitch *)sender {
+    self.updateChecker.automaticCheckEnabled = sender.isOn;
+    [self checkForUpdatesAutomatically];
+}
+
+// 打开配置页或回到前台时静默检查。成功后一段时间内不再请求；失败（如首次联网等待授权）则在下次回到前台时重试。
+- (void)checkForUpdatesAutomatically {
+    KSBallUpdateChecker *checker = self.updateChecker;
+    NSDate *lastCheckDate = checker.lastCheckDate;
+    if (!checker.automaticCheckEnabled || checker.isChecking || (lastCheckDate && -lastCheckDate.timeIntervalSinceNow < KSBallAutomaticUpdateCheckInterval)) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [checker checkForUpdatesWithCompletion:^(KSBallRelease *release, NSError *error) {
+        // 只提示未被忽略的新版本；正在显示其它页面或弹窗时不打扰，检查结果仍会显示在“检查更新”一行。
+        UIViewController *presenter = weakSelf.navigationController ?: weakSelf;
+        if (!release || ![weakSelf.updateChecker isUpdateRelease:release] || [weakSelf.updateChecker isReleaseIgnored:release] || presenter.presentedViewController) {
+            return;
+        }
+        [weakSelf presentUpdateAlertForRelease:release];
+    }];
+}
+
+// 手动检查会重新提示已忽略的版本，失败时说明原因。
+- (void)checkForUpdatesManually {
+    if (self.updateChecker.isChecking) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [self.updateChecker checkForUpdatesWithCompletion:^(KSBallRelease *release, NSError *error) {
+        if (error) {
+            [weakSelf showAlertWithTitle:@"检查更新失败" message:error.localizedDescription];
+        } else if ([weakSelf.updateChecker isUpdateRelease:release]) {
+            [weakSelf presentUpdateAlertForRelease:release];
+        }
+    }];
+}
+
+- (void)presentUpdateAlertForRelease:(KSBallRelease *)release {
+    NSString *notes = release.notes.length > 0 ? release.notes : @"暂无更新说明。";
+    if (notes.length > KSBallUpdateNotesDisplayLimit) {
+        NSRange range = [notes rangeOfComposedCharacterSequencesForRange:NSMakeRange(0, KSBallUpdateNotesDisplayLimit)];
+        notes = [[notes substringWithRange:range] stringByAppendingString:@"…"];
+    }
+    NSString *message = [NSString stringWithFormat:@"新版本：%@\n当前版本：%@\n\n%@", release.version.displayString, self.updateChecker.currentVersion.displayString, notes];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"发现新版本" message:message preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weakSelf = self;
+    UIAlertAction *installAction = [UIAlertAction actionWithTitle:@"立即更新" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        [weakSelf installRelease:release];
+    }];
+    [alert addAction:installAction];
+    [alert addAction:[UIAlertAction actionWithTitle:@"忽略此版本" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        [weakSelf.updateChecker ignoreRelease:release];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"稍后" style:UIAlertActionStyleCancel handler:nil]];
+    alert.preferredAction = installAction;
+    [self presentAlertFromTopController:alert];
+}
+
+// 交给 TrollStore 下载并安装；TrollStore 不响应 URL scheme 时改为打开发布页手动下载。
+- (void)installRelease:(KSBallRelease *)release {
+    __weak typeof(self) weakSelf = self;
+    [UIApplication.sharedApplication openURL:[KSBallUpdateChecker installURLForRelease:release] options:@{} completionHandler:^(BOOL success) {
+        if (success) {
+            return;
+        }
+        [UIApplication.sharedApplication openURL:release.pageURL ?: release.downloadURL options:@{} completionHandler:^(BOOL opened) {
+            if (!opened) {
+                [weakSelf showAlertWithTitle:@"无法打开 TrollStore" message:@"请在 TrollStore 中手动安装新版本。"];
+            }
+        }];
+    }];
+}
+
+- (void)updateCheckerDidChange:(NSNotification *)notification {
+    // 只刷新可见的那一行，避免重载表格打断正在进行的滑动或拖动。
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:KSBallUpdateRowCheck inSection:KSBallConfigurationSectionUpdate];
+    UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+    if (cell) {
+        [self configureCheckUpdateCell:cell];
+    }
+}
+
 #pragma mark - 辅助
 
 - (UIImage *)listIconForBundleIdentifier:(NSString *)bundleIdentifier {
@@ -407,11 +562,6 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
     return listIcon;
 }
 
-- (void)toggleEditing {
-    [self setEditing:!self.editing animated:YES];
-    self.navigationItem.rightBarButtonItem.title = self.editing ? @"完成" : @"编辑";
-}
-
 - (void)settingsDidChange:(NSNotification *)notification {
     // 拖动滑块时重载表格会打断手势，数值标签已在拖动回调里更新。
     if (self.adjustingSlider) {
@@ -423,12 +573,22 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
     [self.settingsStore reload];
     [self.tableView reloadData];
+    [self checkForUpdatesAutomatically];
 }
 
 - (void)showAlertWithTitle:(NSString *)title message:(NSString *)message {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    [self presentAlertFromTopController:alert];
+}
+
+// 检查更新的结果异步返回，此时配置页可能已被其它页面或弹窗覆盖，从最上层的控制器弹出。
+- (void)presentAlertFromTopController:(UIAlertController *)alert {
+    UIViewController *presenter = self.navigationController ?: self;
+    while (presenter.presentedViewController) {
+        presenter = presenter.presentedViewController;
+    }
+    [presenter presentViewController:alert animated:YES completion:nil];
 }
 
 @end

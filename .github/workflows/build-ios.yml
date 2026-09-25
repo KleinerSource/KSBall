@@ -18,10 +18,30 @@ jobs:
   build:
     name: Build TrollStore TIPA
     runs-on: macos-15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.package.outputs.artifact_name }}
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+        with:
+          # 版本号按上一次 CI 版本递增之后的全部提交计算，需要完整历史。
+          fetch-depth: 0
+
+      - name: Test version policy
+        run: python3 -m unittest discover -s Scripts -v
+
+      # 新增/删除/增强功能：次版本号 +1 且补丁号归零；优化/修复/改进：补丁号 +1；
+      # 构建、CI、文档、测试与编译修复只增加 build；build 每次构建都 +1。
+      # 这里只改工作区里的 Info.plist，main 分支构建成功后才由 release job 写回仓库。
+      - name: Compute build version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(python3 Scripts/bump_version.py --auto)"
+          echo "构建版本：${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Show Xcode environment
         run: |
@@ -52,12 +72,19 @@ jobs:
           command -v ldid
 
       - name: Package TrollStore TIPA
+        id: package
         env:
           DERIVED_DATA: ${{ runner.temp }}/KSBallDerivedData
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           app_path="$DERIVED_DATA/Build/Products/Release-iphoneos/KSBall.app"
           test -d "$app_path"
+          built_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Info.plist")+$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_path/Info.plist")"
+          if [[ "$built_version" != "$VERSION" ]]; then
+            echo "::error title=Version mismatch::Built app reports $built_version, expected $VERSION"
+            exit 1
+          fi
           executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Info.plist")"
           executable_path="$app_path/$executable_name"
           test -f "$executable_path"
@@ -104,82 +131,88 @@ jobs:
             echo "::error title=Invalid application identifier::Expected com.kleinersource.ksball, got $signed_app_identifier"
             exit 1
           fi
+          artifact_name="KSBall_${VERSION}"
           cp -R "$app_path" artifact/Payload/KSBall.app
-          ditto -c -k --sequesterRsrc --keepParent artifact/Payload artifact/KSBall.tipa
-          shasum -a 256 artifact/KSBall.tipa | tee artifact/KSBall.tipa.sha256
+          ditto -c -k --sequesterRsrc --keepParent artifact/Payload "artifact/${artifact_name}.tipa"
+          (cd artifact && shasum -a 256 "${artifact_name}.tipa" | tee "${artifact_name}.tipa.sha256")
+          echo "artifact_name=${artifact_name}" >> "$GITHUB_OUTPUT"
 
       - name: Upload TIPA and build log
         uses: actions/upload-artifact@v7
         with:
-          name: KSBall-${{ github.sha }}
+          name: ${{ steps.package.outputs.artifact_name }}
           path: |
-            artifact/KSBall.tipa
-            artifact/KSBall.tipa.sha256
+            artifact/${{ steps.package.outputs.artifact_name }}.tipa
+            artifact/${{ steps.package.outputs.artifact_name }}.tipa.sha256
             artifact/KSBall.entitlements.plist
             xcodebuild.log
           if-no-files-found: error
           retention-days: 14
 
   release:
-    name: Update testing release
+    name: Publish rolling release
     needs: build
-    if: github.event_name == 'push'
+    # 只有 main 分支的推送与手动运行会写回版本号并更新滚动 Release；其它分支与拉取请求只产出 Actions 工件。
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      # 应用内的更新检测读取这个滚动 Release，改名时要同步修改 KSBallUpdateChecker.m。
+      RELEASE_TAG: latest
+      VERSION: ${{ needs.build.outputs.version }}
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+        with:
+          # 生成说明时要找到上一次发布以来的全部提交。
+          fetch-depth: 0
 
       - name: Download TIPA
         uses: actions/download-artifact@v8
         with:
-          name: KSBall-${{ github.sha }}
+          name: ${{ needs.build.outputs.artifact_name }}
           path: release
 
-      - name: Create or update release
+      # 构建成功后才写回版本号，失败或被取消的构建不会占用版本号。
+      # 提交带 [skip ci]，而且 GITHUB_TOKEN 的推送本身也不会触发新的运行。
+      - name: Persist build version
+        run: |
+          set -euo pipefail
+          python3 Scripts/bump_version.py --set "$VERSION"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add KSBall/Info.plist
+          git commit -m "chore: bump build metadata to ${VERSION} [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: testing
         run: |
           set -euo pipefail
           find release -type f -print
-          tipa_path="$(find release -type f -name 'KSBall.tipa' -print -quit)"
-          checksum_path="$(find release -type f -name 'KSBall.tipa.sha256' -print -quit)"
+          tipa_path="$(find release -type f -name '*.tipa' -print -quit)"
+          checksum_path="$(find release -type f -name '*.tipa.sha256' -print -quit)"
           build_log_path="$(find release -type f -name 'xcodebuild.log' -print -quit)"
           test -n "$tipa_path"
           test -n "$checksum_path"
           test -n "$build_log_path"
-          release_notes="自动测试构建
-
-          提交：${GITHUB_SHA}
-          分支：${GITHUB_REF_NAME}
-          工作流：${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            while IFS= read -r asset_name; do
-              gh release delete-asset "$RELEASE_TAG" "$asset_name" --yes
-            done < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
-            gh release edit "$RELEASE_TAG" \
-              --title 'KSBall 测试构建' \
-              --prerelease \
-              --latest=false \
-              --target "$GITHUB_SHA" \
-              --notes "$release_notes"
-            gh release upload "$RELEASE_TAG" \
-              "$tipa_path" \
-              "$checksum_path" \
-              "$build_log_path" \
-              --clobber
-          else
-            gh release create "$RELEASE_TAG" \
-              "$tipa_path" \
-              "$checksum_path" \
-              "$build_log_path" \
-              --title 'KSBall 测试构建' \
-              --prerelease \
-              --latest=false \
-              --target "$GITHUB_SHA" \
-              --notes "$release_notes"
-          fi
+          notes_file="$(mktemp)"
+          trap 'rm -f "$notes_file"' EXIT
+          # 必须在删除旧 Release 之前生成：说明以旧 Release 指向的提交为起点。
+          bash Scripts/generate_release_notes.sh "$RELEASE_TAG" "$VERSION" "$notes_file"
+          cat "$notes_file"
+          # 删除后重建，tag 才会移到本次提交；gh release edit --target 不会移动已存在的 tag。
+          gh release delete "$RELEASE_TAG" --yes --cleanup-tag || true
+          gh release create "$RELEASE_TAG" \
+            "$tipa_path" \
+            "$checksum_path" \
+            "$build_log_path" \
+            --title "KSBall ${VERSION}" \
+            --prerelease \
+            --latest=false \
+            --target "$GITHUB_SHA" \
+            --notes-file "$notes_file"
