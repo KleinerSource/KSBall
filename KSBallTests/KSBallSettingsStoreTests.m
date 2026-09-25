@@ -99,4 +99,34 @@
     XCTAssertEqual(invalid.backdropStyle, KSBallBackdropStyleAutomatic);
 }
 
+- (void)testFloatingWindowFlagPersistsPerShortcut {
+    KSBallSettingsStore *store = [[KSBallSettingsStore alloc] initWithUserDefaults:self.defaults key:self.key];
+    [store addShortcut:[[KSBallShortcut alloc] initWithBundleIdentifier:@"com.example.first" displayName:@"First"]];
+    [store addShortcut:[[KSBallShortcut alloc] initWithBundleIdentifier:@"com.example.second" displayName:@"Second"]];
+    XCTAssertFalse(store.settings.hasFloatingWindowShortcuts);
+
+    [store setShortcutAtIndex:1 opensInFloatingWindow:YES];
+    [store setShortcutAtIndex:5 opensInFloatingWindow:YES];
+    XCTAssertTrue(store.settings.hasFloatingWindowShortcuts);
+
+    KSBallSettingsStore *reloadedStore = [[KSBallSettingsStore alloc] initWithUserDefaults:self.defaults key:self.key];
+    XCTAssertFalse(reloadedStore.settings.shortcuts[0].opensInFloatingWindow);
+    XCTAssertTrue(reloadedStore.settings.shortcuts[1].opensInFloatingWindow);
+    KSBallShortcut *shortcutCopy = [reloadedStore.settings.shortcuts[1] copy];
+    KSBallSettings *settingsCopy = [reloadedStore.settings copy];
+    XCTAssertTrue(shortcutCopy.opensInFloatingWindow);
+    XCTAssertTrue(settingsCopy.hasFloatingWindowShortcuts);
+
+    [reloadedStore setShortcutAtIndex:1 opensInFloatingWindow:NO];
+    XCTAssertFalse(reloadedStore.settings.hasFloatingWindowShortcuts);
+}
+
+- (void)testLegacyShortcutOpensFullScreen {
+    NSDictionary *legacySettings = @{@"shortcuts": @[@{@"bundleIdentifier": @"com.example.legacy", @"displayName": @"Legacy"}]};
+    KSBallSettings *settings = [KSBallSettings settingsFromDictionary:legacySettings];
+    XCTAssertEqual(settings.shortcuts.count, 1);
+    XCTAssertFalse(settings.shortcuts.firstObject.opensInFloatingWindow);
+    XCTAssertFalse(settings.hasFloatingWindowShortcuts);
+}
+
 @end

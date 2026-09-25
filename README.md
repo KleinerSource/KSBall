@@ -6,6 +6,18 @@ KSBall 是一个仅面向 TrollStore 的 iPhone 全局快捷启动器。启动 K
 
 配置页可以调整：悬浮条样式（自动/亮色/暗色/隐藏）与触摸半径、毛玻璃样式（自动/亮色/暗色/无）与模糊程度、图标大小、同圈间距与圈间距。快捷应用可按用户应用、巨魔应用、系统应用分类逐个添加，并在全屏的扇形预览中长按拖动调整顺序。调整时悬浮条会实时预览效果。
 
+## 悬浮分屏
+
+在配置页打开某个快捷应用右侧的开关后，从扇形菜单选中它会以悬浮窗打开，而不是全屏启动。菜单中的这类图标带有窗口角标。
+
+- 悬浮窗按全屏尺寸运行应用并等比缩小显示。拖动顶部标题条可移动窗口，拖右下角可缩放；标题条上有关闭、收起（−）和全屏打开三个按钮。
+- 把窗口拖出屏幕左右边缘或点“−”，窗口会收进该侧的收纳区，变成实时缩略图。点缩略图恢复窗口，向屏幕外侧甩出则关闭。
+- 最多同时悬浮 3 个应用，锁屏时自动隐藏。
+- 应用未运行时由 KSBall 在后台启动，关闭悬浮窗时一并结束；应用已在运行时直接附加一个悬浮场景，关闭悬浮窗不会结束它。
+- “全屏打开”只收回悬浮场景、不结束进程，再交给 SpringBoard 全屏显示。
+
+实现方式参考 [FrontBoardAppLauncher](https://github.com/khanhduytran0/FrontBoardAppLauncher)：HUD 子进程启动时调用 `FBSystemShellInitialize` 成为 FrontBoard 场景宿主，用 `FBSceneManager` 为目标应用创建场景，再把 `_UIScenePresenter` 的画面嵌入悬浮窗。这一步只在至少有一个应用开启悬浮窗时执行，开关由无变有或由有变无时 HUD 会自动重建。宿主状态显示在配置页“系统能力 → 悬浮分屏”一行。
+
 ## 能力边界
 
 - 支持 iOS 15 起的系统；实际安装前应确认设备系统受当前 TrollStore 版本支持。
@@ -13,6 +25,12 @@ KSBall 是一个仅面向 TrollStore 的 iPhone 全局快捷启动器。启动 K
 - 设备重启、注销 SpringBoard（respring）或用户在应用切换器中强制结束 KSBall 后，需要从主屏重新打开一次。
 - HUD 窗口固定为竖屏坐标系，横屏时悬浮条仍位于竖屏方向的左右边缘。
 - 主屏上隐藏或禁止启动的系统应用不会列出；可手动输入 Bundle ID 添加未枚举到的入口。
+- 悬浮分屏依赖 FrontBoard / RunningBoard 私有接口，下面几点是已知限制：
+  - 只支持竖屏。
+  - 悬浮应用里的键盘可能弹不出来，或位置不对。
+  - 多数 iPhone 应用只支持单个场景：如果应用已在运行，附加的悬浮场景可能是空白的。这时先在应用切换器中结束它，再从菜单以悬浮窗打开。
+  - 悬浮期间从主屏再次打开同一个应用，可能与悬浮场景冲突。
+  - respring、HUD 重建或 KSBall 被结束后，悬浮窗会关闭。
 
 ## 构建与安装
 
@@ -23,7 +41,7 @@ KSBall 是一个仅面向 TrollStore 的 iPhone 全局快捷启动器。启动 K
 
 ## 测试
 
-`KSBallTests` 覆盖设置 JSON 回退、48 项上限、图标尺寸、两种间距、外观选项、排序持久化、扇形几何（边界、间距、每圈容量、展开方向）、版本比较与 Release 解析和桥接层 mock。SpringBoard 窗口注册、LaunchServices 启动行为与 TrollStore 在线安装必须在真机上验证。版本递增策略的测试用 `python3 -m unittest discover -s Scripts` 运行，CI 每次构建前也会执行。
+`KSBallTests` 覆盖设置 JSON 回退、48 项上限、图标尺寸、两种间距、外观选项、排序持久化、每个应用的悬浮窗开关、扇形几何（边界、间距、每圈容量、展开方向）、悬浮窗几何（缩放范围、宽高比、安全区限制、收起判定、收纳区排列）、版本比较与 Release 解析和桥接层 mock。SpringBoard 窗口注册、LaunchServices 启动行为、悬浮分屏的场景托管与触摸以及 TrollStore 在线安装必须在真机上验证。版本递增策略的测试用 `python3 -m unittest discover -s Scripts` 运行，CI 每次构建前也会执行。
 
 应用图标由 `Scripts/generate_app_icon.py`（仅依赖 Python 标准库）生成，修改图案后重新运行即可覆盖 `KSBall/Assets.xcassets/AppIcon.appiconset/AppIcon.png`。
 

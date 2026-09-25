@@ -33,6 +33,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 - (id)copyWithZone:(NSZone *)zone {
     KSBallShortcut *copy = [[[self class] allocWithZone:zone] initWithBundleIdentifier:self.bundleIdentifier displayName:self.displayName];
     [copy setValue:self.identifier forKey:@"_identifier"];
+    copy.opensInFloatingWindow = self.opensInFloatingWindow;
     return copy;
 }
 
@@ -41,6 +42,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         @"id": self.identifier.UUIDString,
         @"bundleIdentifier": self.bundleIdentifier ?: @"",
         @"displayName": self.displayName ?: @"",
+        @"floatingWindow": @(self.opensInFloatingWindow),
     };
 }
 
@@ -57,6 +59,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     if (uuid) {
         [shortcut setValue:uuid forKey:@"_identifier"];
     }
+    // 旧设置没有这一项，默认全屏启动。
+    NSNumber *floatingWindow = [dictionary[@"floatingWindow"] isKindOfClass:NSNumber.class] ? dictionary[@"floatingWindow"] : nil;
+    shortcut.opensInFloatingWindow = floatingWindow.boolValue;
     return shortcut;
 }
 
@@ -135,6 +140,15 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         }
     }
     self.shortcuts = validShortcuts;
+}
+
+- (BOOL)hasFloatingWindowShortcuts {
+    for (KSBallShortcut *shortcut in self.shortcuts) {
+        if (shortcut.opensInFloatingWindow) {
+            return YES;
+        }
+    }
+    return NO;
 }
 
 - (NSDictionary<NSString *,id> *)dictionaryRepresentation {

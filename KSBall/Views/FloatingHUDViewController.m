@@ -1,15 +1,19 @@
 #import "FloatingHUDViewController.h"
+#import "FloatingAppWindowManager.h"
+#import "HUDSceneCoordinator.h"
 #import "KSBallFanLayout.h"
+#import "KSBallLayerHitTesting.h"
 #import "KSBallSettingsStore.h"
 #import "SystemApplicationBridge.h"
 #import <math.h>
 #import <notify.h>
-#import <objc/message.h>
 
 // 悬浮条的边距、宽高与可移动范围定义在 KSBallFanLayout 中，与设置页的排序编辑器共用。
 static const CGFloat KSBallHandleActiveBarWidth = 6.0;
 static const CGFloat KSBallDragActivationDistance = 8.0;
 static const CGFloat KSBallPreviewIconSize = 108.0;
+// 菜单图标上“以悬浮窗打开”角标相对图标的尺寸。
+static const CGFloat KSBallFloatingBadgeRatio = 0.38;
 // 配置变化后扇形菜单与触摸范围的预览停留时间。
 static const NSTimeInterval KSBallMenuPreviewDuration = 1.6;
 static const char * const KSBallLockStateNotification = "com.apple.springboard.lockstate";
@@ -18,25 +22,6 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     KSBallResolvedAppearanceLight,
     KSBallResolvedAppearanceDark,
 };
-
-// 系统窗口托管按图层做命中测试：透明区域的触摸会直接落到下层应用。
-// 热区需要按不透明处理；纯展示用的图层则不能拦截触摸。
-static void KSBallSetLayerHitTestsAsOpaque(CALayer *layer, BOOL opaque) {
-    SEL selector = NSSelectorFromString(@"setHitTestsAsOpaque:");
-    if ([layer respondsToSelector:selector]) {
-        ((void (*)(id, SEL, BOOL))objc_msgSend)(layer, selector, opaque);
-    }
-}
-
-static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting) {
-    SEL selector = NSSelectorFromString(@"setAllowsHitTesting:");
-    if ([layer respondsToSelector:selector]) {
-        ((void (*)(id, SEL, BOOL))objc_msgSend)(layer, selector, allowsHitTesting);
-    }
-    for (CALayer *sublayer in layer.sublayers) {
-        KSBallSetLayerAllowsHitTesting(sublayer, allowsHitTesting);
-    }
-}
 
 @interface KSBallHUDCanvasView : UIView
 @property (nonatomic, copy) NSArray<UIView *> *interactiveViews;
@@ -58,6 +43,9 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 @interface FloatingHUDViewController () <UIGestureRecognizerDelegate>
 @property (nonatomic, strong) KSBallSettingsStore *settingsStore;
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
+// 悬浮窗位于最底层，扇形菜单与毛玻璃背景仍能盖在窗口之上。
+@property (nonatomic, strong) UIView *floatingContainerView;
+@property (nonatomic, strong, nullable) FloatingAppWindowManager *floatingWindowManager;
 @property (nonatomic, strong) UIView *handleView;
 @property (nonatomic, strong) UIView *touchAreaView;
 @property (nonatomic, strong) UIView *barView;
@@ -117,6 +105,22 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+
+    self.floatingContainerView = [[UIView alloc] initWithFrame:self.view.bounds];
+    self.floatingContainerView.backgroundColor = UIColor.clearColor;
+    self.floatingContainerView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:self.floatingContainerView];
+    if (KSBallFloatingAppHostingAvailable()) {
+        __weak typeof(self) weakSelf = self;
+        self.floatingWindowManager = [[FloatingAppWindowManager alloc] initWithContainerView:self.floatingContainerView applicationBridge:self.applicationBridge];
+        self.floatingWindowManager.userInterfaceStyle = [self systemAppearance] == KSBallResolvedAppearanceDark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        self.floatingWindowManager.feedbackHandler = ^(NSString *message) {
+            [weakSelf showFeedback:message];
+        };
+        self.floatingWindowManager.interactiveViewsDidChangeHandler = ^{
+            [weakSelf refreshHitTargets];
+        };
+    }
 
     self.backdropView = [[UIVisualEffectView alloc] initWithEffect:nil];
     self.backdropView.userInteractionEnabled = NO;
@@ -285,6 +289,8 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         [self dismissMenuAnimated:NO];
     }
     self.handleView.hidden = screenLocked;
+    // 锁屏时隐藏悬浮窗，场景保持运行，解锁后原样恢复。
+    [self.floatingWindowManager setWindowsHidden:screenLocked];
     [self layoutHandle];
 }
 
@@ -377,6 +383,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     if (self.backdropRequested) {
         [self applyBackdropEffect];
     }
+    self.floatingWindowManager.userInterfaceStyle = [self systemAppearance] == KSBallResolvedAppearanceDark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
 }
 
 // 调整触摸半径时在悬浮条周围短暂显示热区范围。
@@ -635,12 +642,30 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
             iconView.contentMode = UIViewContentModeCenter;
         }
         [itemView addSubview:iconView];
+        if (shortcut.opensInFloatingWindow) {
+            [itemView addSubview:[self floatingBadgeViewForItemSize:size]];
+        }
         // 菜单图标只做展示：选择由悬浮条上的同一次滑动完成，预览期间也不能挡住下层应用的触摸。
         KSBallSetLayerAllowsHitTesting(itemView.layer, NO);
         itemView.accessibilityLabel = shortcut.displayName;
         [self.view insertSubview:itemView belowSubview:self.previewImageView];
         [self.menuItemViews addObject:itemView];
     }
+}
+
+// 以悬浮窗打开的应用在图标右下角显示一个窗口角标，展开菜单时即可分辨打开方式。
+- (UIView *)floatingBadgeViewForItemSize:(CGFloat)itemSize {
+    CGFloat badgeSize = round(itemSize * KSBallFloatingBadgeRatio);
+    UIView *badgeView = [[UIView alloc] initWithFrame:CGRectMake(itemSize - badgeSize + 2.0, itemSize - badgeSize + 2.0, badgeSize, badgeSize)];
+    badgeView.backgroundColor = UIColor.whiteColor;
+    badgeView.layer.cornerRadius = badgeSize / 2.0;
+    UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:badgeSize * 0.5 weight:UIImageSymbolWeightSemibold];
+    UIImageView *symbolView = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"rectangle.on.rectangle" withConfiguration:configuration]];
+    symbolView.tintColor = [UIColor colorWithWhite:0.15 alpha:1.0];
+    symbolView.contentMode = UIViewContentModeCenter;
+    symbolView.frame = badgeView.bounds;
+    [badgeView addSubview:symbolView];
+    return badgeView;
 }
 
 - (nullable UIView *)menuItemViewNearPoint:(CGPoint)point {
@@ -719,9 +744,22 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 }
 
 - (void)launchShortcut:(KSBallShortcut *)shortcut {
+    if (shortcut.opensInFloatingWindow) {
+        if (self.floatingWindowManager) {
+            UIImage *icon = self.iconsByBundleIdentifier[shortcut.bundleIdentifier.lowercaseString];
+            [self.floatingWindowManager openShortcut:shortcut icon:icon fromPoint:[self barCenter]];
+            return;
+        }
+        // 宿主不可用时退回全屏启动，不让用户的操作落空。
+        [self showFeedback:@"悬浮分屏不可用，已全屏打开"];
+    }
     if (![self.applicationBridge launchBundleIdentifier:shortcut.bundleIdentifier]) {
         [self showFeedback:@"应用不可用或无法启动"];
     }
+}
+
+- (void)closeFloatingWindows {
+    [self.floatingWindowManager closeAllWindows];
 }
 
 #pragma mark - 手势
@@ -852,7 +890,9 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 
 - (void)refreshHitTargets {
     // 菜单图标不参与命中测试：整个选择过程都由悬浮条上的同一次滑动手势完成。
-    ((KSBallHUDCanvasView *)self.view).interactiveViews = @[self.handleView];
+    // 悬浮窗的外框与收纳区需要接收触摸；窗口移动时按实时 frame 判断，无需逐帧刷新。
+    NSArray<UIView *> *floatingViews = self.floatingWindowManager.interactiveViews ?: @[];
+    ((KSBallHUDCanvasView *)self.view).interactiveViews = [@[self.handleView] arrayByAddingObjectsFromArray:floatingViews];
 }
 
 @end

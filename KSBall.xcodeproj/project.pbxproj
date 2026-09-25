@@ -22,6 +22,10 @@
 		A00000000000000000000215 /* KSBallSharedStorage.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000151 /* KSBallSharedStorage.m */; };
 		A00000000000000000000216 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000112 /* Assets.xcassets */; };
 		A00000000000000000000217 /* ShortcutArrangementViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000153 /* ShortcutArrangementViewController.m */; };
+		A00000000000000000000218 /* FloatingAppSceneHost.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000157 /* FloatingAppSceneHost.m */; };
+		A00000000000000000000219 /* FloatingAppWindowManager.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000159 /* FloatingAppWindowManager.m */; };
+		A00000000000000000000220 /* KSBallFloatingWindowLayout.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000194 /* KSBallFloatingWindowLayout.m */; };
+		A00000000000000000000221 /* FloatingAppWindowView.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000196 /* FloatingAppWindowView.m */; };
 		A00000000000000000000230 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000180 /* UIKit.framework */; };
 		A00000000000000000000231 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000181 /* Foundation.framework */; };
 		A00000000000000000000240 /* KSBallSettingsStoreTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000160 /* KSBallSettingsStoreTests.m */; };
@@ -30,6 +34,7 @@
 		A00000000000000000000250 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000182 /* XCTest.framework */; };
 		A00000000000000000000260 /* KSBallUpdateChecker.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000191 /* KSBallUpdateChecker.m */; };
 		A00000000000000000000261 /* KSBallUpdateCheckerTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000192 /* KSBallUpdateCheckerTests.m */; };
+		A00000000000000000000262 /* KSBallFloatingWindowLayoutTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000198 /* KSBallFloatingWindowLayoutTests.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,6 +78,11 @@
 		A00000000000000000000151 /* KSBallSharedStorage.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallSharedStorage.m; sourceTree = "<group>"; };
 		A00000000000000000000152 /* ShortcutArrangementViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ShortcutArrangementViewController.h; sourceTree = "<group>"; };
 		A00000000000000000000153 /* ShortcutArrangementViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ShortcutArrangementViewController.m; sourceTree = "<group>"; };
+		A00000000000000000000155 /* KSBallFrontBoardPrivate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KSBallFrontBoardPrivate.h; sourceTree = "<group>"; };
+		A00000000000000000000156 /* FloatingAppSceneHost.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FloatingAppSceneHost.h; sourceTree = "<group>"; };
+		A00000000000000000000157 /* FloatingAppSceneHost.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FloatingAppSceneHost.m; sourceTree = "<group>"; };
+		A00000000000000000000158 /* FloatingAppWindowManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FloatingAppWindowManager.h; sourceTree = "<group>"; };
+		A00000000000000000000159 /* FloatingAppWindowManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FloatingAppWindowManager.m; sourceTree = "<group>"; };
 		A00000000000000000000160 /* KSBallSettingsStoreTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallSettingsStoreTests.m; sourceTree = "<group>"; };
 		A00000000000000000000161 /* KSBallFanLayoutTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallFanLayoutTests.m; sourceTree = "<group>"; };
 		A00000000000000000000162 /* SystemApplicationBridgeTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SystemApplicationBridgeTests.m; sourceTree = "<group>"; };
@@ -84,6 +94,12 @@
 		A00000000000000000000190 /* KSBallUpdateChecker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KSBallUpdateChecker.h; sourceTree = "<group>"; };
 		A00000000000000000000191 /* KSBallUpdateChecker.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallUpdateChecker.m; sourceTree = "<group>"; };
 		A00000000000000000000192 /* KSBallUpdateCheckerTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallUpdateCheckerTests.m; sourceTree = "<group>"; };
+		A00000000000000000000193 /* KSBallFloatingWindowLayout.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KSBallFloatingWindowLayout.h; sourceTree = "<group>"; };
+		A00000000000000000000194 /* KSBallFloatingWindowLayout.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallFloatingWindowLayout.m; sourceTree = "<group>"; };
+		A00000000000000000000195 /* FloatingAppWindowView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FloatingAppWindowView.h; sourceTree = "<group>"; };
+		A00000000000000000000196 /* FloatingAppWindowView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FloatingAppWindowView.m; sourceTree = "<group>"; };
+		A00000000000000000000197 /* KSBallLayerHitTesting.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KSBallLayerHitTesting.h; sourceTree = "<group>"; };
+		A00000000000000000000198 /* KSBallFloatingWindowLayoutTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KSBallFloatingWindowLayoutTests.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -157,6 +173,11 @@
 				A00000000000000000000151 /* KSBallSharedStorage.m */,
 				A00000000000000000000190 /* KSBallUpdateChecker.h */,
 				A00000000000000000000191 /* KSBallUpdateChecker.m */,
+				A00000000000000000000155 /* KSBallFrontBoardPrivate.h */,
+				A00000000000000000000156 /* FloatingAppSceneHost.h */,
+				A00000000000000000000157 /* FloatingAppSceneHost.m */,
+				A00000000000000000000158 /* FloatingAppWindowManager.h */,
+				A00000000000000000000159 /* FloatingAppWindowManager.m */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -176,6 +197,11 @@
 				A00000000000000000000149 /* AppPickerViewController.m */,
 				A00000000000000000000152 /* ShortcutArrangementViewController.h */,
 				A00000000000000000000153 /* ShortcutArrangementViewController.m */,
+				A00000000000000000000193 /* KSBallFloatingWindowLayout.h */,
+				A00000000000000000000194 /* KSBallFloatingWindowLayout.m */,
+				A00000000000000000000195 /* FloatingAppWindowView.h */,
+				A00000000000000000000196 /* FloatingAppWindowView.m */,
+				A00000000000000000000197 /* KSBallLayerHitTesting.h */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -187,6 +213,7 @@
 				A00000000000000000000161 /* KSBallFanLayoutTests.m */,
 				A00000000000000000000162 /* SystemApplicationBridgeTests.m */,
 				A00000000000000000000192 /* KSBallUpdateCheckerTests.m */,
+				A00000000000000000000198 /* KSBallFloatingWindowLayoutTests.m */,
 			);
 			path = KSBallTests;
 			sourceTree = "<group>";
@@ -305,6 +332,10 @@
 				A00000000000000000000212 /* ConfigurationViewController.m in Sources */,
 				A00000000000000000000213 /* AppPickerViewController.m in Sources */,
 				A00000000000000000000217 /* ShortcutArrangementViewController.m in Sources */,
+				A00000000000000000000218 /* FloatingAppSceneHost.m in Sources */,
+				A00000000000000000000219 /* FloatingAppWindowManager.m in Sources */,
+				A00000000000000000000220 /* KSBallFloatingWindowLayout.m in Sources */,
+				A00000000000000000000221 /* FloatingAppWindowView.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -316,6 +347,7 @@
 				A00000000000000000000241 /* KSBallFanLayoutTests.m in Sources */,
 				A00000000000000000000242 /* SystemApplicationBridgeTests.m in Sources */,
 				A00000000000000000000261 /* KSBallUpdateCheckerTests.m in Sources */,
+				A00000000000000000000262 /* KSBallFloatingWindowLayoutTests.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -15,6 +15,7 @@ FOUNDATION_EXPORT NSNotificationName const KSBallSettingsDidChangeNotification;
 - (BOOL)addShortcut:(KSBallShortcut *)shortcut;
 - (void)removeShortcutAtIndex:(NSUInteger)index;
 - (void)moveShortcutFromIndex:(NSUInteger)fromIndex toIndex:(NSUInteger)toIndex;
+- (void)setShortcutAtIndex:(NSUInteger)index opensInFloatingWindow:(BOOL)opensInFloatingWindow;
 - (void)reload;
 
 @end

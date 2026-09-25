@@ -47,6 +47,8 @@ typedef NS_ENUM(NSInteger, KSBallBackdropStyle) {
 @property (nonatomic, copy, readonly) NSUUID *identifier;
 @property (nonatomic, copy) NSString *bundleIdentifier;
 @property (nonatomic, copy) NSString *displayName;
+/// 从扇形菜单以悬浮窗打开，而不是全屏启动。
+@property (nonatomic) BOOL opensInFloatingWindow;
 
 - (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName;
 - (NSDictionary<NSString *, id> *)dictionaryRepresentation;
@@ -71,6 +73,9 @@ typedef NS_ENUM(NSInteger, KSBallBackdropStyle) {
 /// 毛玻璃的模糊程度，1 为系统材质的完整模糊。
 @property (nonatomic) CGFloat backdropBlur;
 @property (nonatomic, strong) NSMutableArray<KSBallShortcut *> *shortcuts;
+
+/// 是否有快捷应用设为以悬浮窗打开；HUD 子进程据此决定是否初始化悬浮分屏宿主。
+@property (nonatomic, readonly) BOOL hasFloatingWindowShortcuts;
 
 + (instancetype)defaultSettings;
 - (void)normalize;

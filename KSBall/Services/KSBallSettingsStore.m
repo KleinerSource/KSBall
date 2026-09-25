@@ -143,4 +143,15 @@ static const char * const KSBallSettingsDarwinNotification = "com.kleinersource.
     }];
 }
 
+- (void)setShortcutAtIndex:(NSUInteger)index opensInFloatingWindow:(BOOL)opensInFloatingWindow {
+    if (index >= self.settings.shortcuts.count || self.settings.shortcuts[index].opensInFloatingWindow == opensInFloatingWindow) {
+        return;
+    }
+    [self mutateSettings:^(KSBallSettings *settings) {
+        if (index < settings.shortcuts.count) {
+            settings.shortcuts[index].opensInFloatingWindow = opensInFloatingWindow;
+        }
+    }];
+}
+
 @end

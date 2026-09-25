@@ -6,6 +6,8 @@ NS_ASSUME_NONNULL_BEGIN
 @class SystemApplicationBridge;
 
 FOUNDATION_EXPORT BOOL KSBallIsHUDProcess(void);
+/// HUD 子进程是否已成功初始化为悬浮分屏宿主。
+FOUNDATION_EXPORT BOOL KSBallFloatingAppHostingAvailable(void);
 FOUNDATION_EXPORT int KSBallRunHUDProcess(void);
 FOUNDATION_EXPORT int KSBallStopHUDProcessMain(pid_t processIdentifier);
 
@@ -13,6 +15,8 @@ FOUNDATION_EXPORT int KSBallStopHUDProcessMain(pid_t processIdentifier);
 
 @property (nonatomic, readonly, getter=isHUDActive) BOOL HUDActive;
 @property (nonatomic, copy, readonly) NSString *statusDescription;
+/// HUD 子进程最近一次写入的悬浮分屏宿主状态；没有应用设为悬浮窗打开时说明如何启用。
+@property (nonatomic, copy, readonly) NSString *floatingHostStatusDescription;
 
 + (instancetype)sharedCoordinator;
 - (instancetype)initWithSettingsStore:(KSBallSettingsStore *)settingsStore applicationBridge:(SystemApplicationBridge *)applicationBridge;

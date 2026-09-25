@@ -48,6 +48,12 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
     KSBallUpdateRowCount = 2,
 };
 
+typedef NS_ENUM(NSInteger, KSBallSupportRow) {
+    KSBallSupportRowLaunchServices = 0,
+    KSBallSupportRowFloatingHost = 1,
+    KSBallSupportRowCount = 2,
+};
+
 @interface ConfigurationViewController ()
 @property (nonatomic, strong) KSBallSettingsStore *settingsStore;
 @property (nonatomic, strong) SystemApplicationBridge *applicationBridge;
@@ -105,6 +111,7 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
         case KSBallConfigurationSectionLayout: return KSBallLayoutRowCount;
         case KSBallConfigurationSectionShortcuts: return KSBallShortcutActionRowCount + self.settingsStore.settings.shortcuts.count;
         case KSBallConfigurationSectionUpdate: return KSBallUpdateRowCount;
+        case KSBallConfigurationSectionSupport: return KSBallSupportRowCount;
         default: return 1;
     }
 }
@@ -130,7 +137,7 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
         case KSBallConfigurationSectionLayout:
             return @"扇形菜单围绕悬浮条逐圈展开，每圈按屏幕可显示的范围和间距放下尽可能多的图标。同圈间距控制一圈内相邻图标的距离，圈间距控制两圈之间的距离。空间不足时会等比缩小图标。";
         case KSBallConfigurationSectionShortcuts:
-            return @"在“调整顺序”中以扇形预览长按拖动图标即可排序，靠前的应用位于靠近悬浮条的内圈。左滑应用可删除。";
+            return @"在“调整顺序”中以扇形预览长按拖动图标即可排序，靠前的应用位于靠近悬浮条的内圈。左滑应用可删除。\n\n打开应用右侧的开关后，该应用在菜单中以悬浮窗打开（图标带窗口角标）：拖动标题条移动窗口，拖右下角缩放，拖到屏幕左右边缘或点“−”收进边缘，点缩略图恢复、向外甩出关闭。最多同时悬浮 3 个应用。";
         case KSBallConfigurationSectionSupport:
             return @"KSBall 只应通过 TrollStore 安装。私有能力不可用时，配置仍会保留。";
         default: {
@@ -156,7 +163,7 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
         case KSBallConfigurationSectionUpdate:
             return [self updateCellForRow:indexPath.row];
         default:
-            return [self supportCell];
+            return indexPath.row == KSBallSupportRowFloatingHost ? [self floatingHostCell] : [self supportCell];
     }
 }
 
@@ -302,8 +309,17 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
     }
     KSBallShortcut *shortcut = shortcuts[row - KSBallShortcutActionRowCount];
     UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"ShortcutCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ShortcutCell"];
+    UISwitch *floatingSwitch = [cell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)cell.accessoryView : nil;
+    if (!floatingSwitch) {
+        floatingSwitch = [UISwitch new];
+        [floatingSwitch addTarget:self action:@selector(floatingWindowSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = floatingSwitch;
+    }
+    floatingSwitch.tag = row - KSBallShortcutActionRowCount;
+    floatingSwitch.on = shortcut.opensInFloatingWindow;
+    floatingSwitch.accessibilityLabel = [NSString stringWithFormat:@"%@ 以悬浮窗打开", shortcut.displayName];
     cell.textLabel.text = shortcut.displayName;
-    cell.detailTextLabel.text = shortcut.bundleIdentifier;
+    cell.detailTextLabel.text = shortcut.opensInFloatingWindow ? [NSString stringWithFormat:@"悬浮窗打开 · %@", shortcut.bundleIdentifier] : shortcut.bundleIdentifier;
     cell.imageView.image = [self listIconForBundleIdentifier:shortcut.bundleIdentifier];
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
@@ -313,6 +329,15 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
     UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"SupportCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"SupportCell"];
     cell.textLabel.text = self.applicationBridge.isAvailable ? @"LaunchServices 可用" : @"LaunchServices 不可用";
     cell.detailTextLabel.text = self.applicationBridge.isAvailable ? self.hudSceneCoordinator.statusDescription : self.applicationBridge.unavailabilityReason;
+    cell.detailTextLabel.numberOfLines = 0;
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    return cell;
+}
+
+- (UITableViewCell *)floatingHostCell {
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"FloatingHostCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"FloatingHostCell"];
+    cell.textLabel.text = @"悬浮分屏";
+    cell.detailTextLabel.text = self.hudSceneCoordinator.floatingHostStatusDescription;
     cell.detailTextLabel.numberOfLines = 0;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
@@ -410,6 +435,10 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
     [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
         settings.enabled = sender.isOn;
     }];
+}
+
+- (void)floatingWindowSwitchChanged:(UISwitch *)sender {
+    [self.settingsStore setShortcutAtIndex:(NSUInteger)sender.tag opensInFloatingWindow:sender.isOn];
 }
 
 - (void)appearanceStyleChanged:(UISegmentedControl *)sender {

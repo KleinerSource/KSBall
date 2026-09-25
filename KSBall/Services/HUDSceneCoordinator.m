@@ -26,6 +26,7 @@ static const char * const KSBallStopProcessArgument = "-stop-hud";
 static NSString * const KSBallHUDProcessIdentifierDefaultsKey = @"KSBallHUDProcessIdentifier";
 static NSString * const KSBallHUDReadyProcessIdentifierStorageKey = @"HUDReadyProcessIdentifier";
 static NSString * const KSBallHUDStatusDescriptionStorageKey = @"HUDStatusDescription";
+static NSString * const KSBallFloatingHostStatusStorageKey = @"FloatingHostStatus";
 static const uid_t KSBallApplicationPersonaIdentifier = 99;
 static const uint32_t KSBallApplicationPersonaFlags = 1;
 static const short KSBallApplicationSpawnFlags = 2;
@@ -134,6 +135,50 @@ static int KSBallPosixSpawnExecutable(const char *executable, char *arguments[],
 BOOL KSBallIsHUDProcess(void) {
     NSString *argument = [NSString stringWithUTF8String:KSBallHUDProcessArgument];
     return [NSProcessInfo.processInfo.arguments containsObject:argument];
+}
+
+#pragma mark - 悬浮分屏宿主
+
+static BOOL KSBallFloatingAppHostingReady;
+
+BOOL KSBallFloatingAppHostingAvailable(void) {
+    return KSBallFloatingAppHostingReady;
+}
+
+static void KSBallSetFloatingHostStatus(NSString *status) {
+    NSData *statusData = [status dataUsingEncoding:NSUTF8StringEncoding];
+    if (statusData) {
+        [KSBallSharedStorage setData:statusData forKey:KSBallFloatingHostStatusStorageKey];
+    }
+}
+
+// 让 HUD 进程像 FrontBoardAppLauncher 那样成为 FrontBoard 场景宿主，才能托管其它应用的场景。
+// 必须在 UIKit 初始化之前调用；只在有应用设为悬浮窗打开时执行，其余情况 HUD 的启动路径保持不变。
+static void KSBallInitializeFloatingAppHosting(void) {
+    if (!KSBallSettingsStore.sharedStore.settings.hasFloatingWindowShortcuts) {
+        [KSBallSharedStorage removeDataForKey:KSBallFloatingHostStatusStorageKey];
+        return;
+    }
+    void *frontBoard = dlopen("/System/Library/PrivateFrameworks/FrontBoard.framework/FrontBoard", RTLD_LAZY | RTLD_GLOBAL);
+    dlopen("/System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices", RTLD_LAZY | RTLD_GLOBAL);
+    dlopen("/System/Library/PrivateFrameworks/RunningBoardServices.framework/RunningBoardServices", RTLD_LAZY | RTLD_GLOBAL);
+    dlopen("/System/Library/PrivateFrameworks/BoardServices.framework/BoardServices", RTLD_LAZY | RTLD_GLOBAL);
+
+    typedef void (*KSBallSystemShellInitializeFunction)(id);
+    KSBallSystemShellInitializeFunction initializeSystemShell = (KSBallSystemShellInitializeFunction)dlsym(frontBoard ?: RTLD_DEFAULT, "FBSystemShellInitialize");
+    if (!initializeSystemShell) {
+        KSBallSetFloatingHostStatus(@"悬浮分屏不可用：系统缺少 FBSystemShellInitialize。");
+        return;
+    }
+    for (NSString *className in @[@"FBSceneManager", @"FBProcessManager", @"RBSProcessHandle", @"FBApplicationProcessLaunchTransaction"]) {
+        if (!NSClassFromString(className)) {
+            KSBallSetFloatingHostStatus([NSString stringWithFormat:@"悬浮分屏不可用：系统缺少 %@。", className]);
+            return;
+        }
+    }
+    initializeSystemShell(nil);
+    KSBallFloatingAppHostingReady = YES;
+    KSBallSetFloatingHostStatus(@"悬浮分屏宿主已就绪。");
 }
 
 #pragma mark - HUD 插件进程
@@ -264,6 +309,9 @@ static void KSBallInstallHUDEventDispatcher(UIApplication *application) {
 @end
 
 int KSBallRunHUDProcess(void) {
+    // FrontBoardAppLauncher 在 UIApplicationMain 之前初始化 system shell，这里同样放在所有 UIKit 初始化之前。
+    KSBallInitializeFloatingAppHosting();
+
     void *graphicsServices = dlopen("/System/Library/PrivateFrameworks/GraphicsServices.framework/GraphicsServices", RTLD_LAZY | RTLD_GLOBAL);
     void *backBoardServices = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_LAZY | RTLD_GLOBAL);
     dlopen("/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices", RTLD_LAZY | RTLD_GLOBAL);
@@ -361,6 +409,8 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
 @property (nonatomic) unsigned int accessibilityWindowContextIdentifier;
 @property (nonatomic) BOOL accessibilityWindowRegistered;
 @property (nonatomic) BOOL hudProcessStopping;
+/// HUD 子进程启动时是否有应用设为悬浮窗打开；变化时需要重建 HUD 以初始化或撤销悬浮分屏宿主。
+@property (nonatomic) BOOL appliedFloatingWindowShortcuts;
 @property (nonatomic, copy) NSString *statusDescription;
 
 - (BOOL)registerHUDWindowWithAccessibilityHost:(UIWindow *)window;
@@ -390,6 +440,7 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
         _settingsStore = settingsStore;
         _applicationBridge = applicationBridge;
         _statusDescription = @"尚未启动 HUD。";
+        _appliedFloatingWindowShortcuts = settingsStore.settings.hasFloatingWindowShortcuts;
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(settingsDidChange:) name:KSBallSettingsDidChangeNotification object:settingsStore];
     }
     return self;
@@ -520,6 +571,7 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
 
     [self unregisterHUDWindowFromAccessibilityHost];
     UIWindow *window = self.hudWindow;
+    [(FloatingHUDViewController *)window.rootViewController closeFloatingWindows];
     window.hidden = YES;
     window.rootViewController = nil;
     self.hudWindow = nil;
@@ -662,10 +714,27 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
         return;
     }
     if (self.settingsStore.settings.enabled) {
-        [self activateHUD];
+        BOOL floatingWindowShortcuts = self.settingsStore.settings.hasFloatingWindowShortcuts;
+        BOOL floatingHostChanged = floatingWindowShortcuts != self.appliedFloatingWindowShortcuts;
+        self.appliedFloatingWindowShortcuts = floatingWindowShortcuts;
+        // 悬浮分屏宿主只能在 HUD 子进程启动时初始化，开关从无到有或从有到无都要重建一次。
+        if (floatingHostChanged && [self hasLiveHUDProcess]) {
+            [self rebuildHUD];
+        } else {
+            [self activateHUD];
+        }
     } else {
         [self deactivateHUD];
     }
+}
+
+- (NSString *)floatingHostStatusDescription {
+    if (!self.settingsStore.settings.hasFloatingWindowShortcuts) {
+        return @"未启用：在快捷应用右侧打开开关后，该应用会以悬浮窗打开。";
+    }
+    NSData *statusData = [KSBallSharedStorage dataForKey:KSBallFloatingHostStatusStorageKey];
+    NSString *status = [[NSString alloc] initWithData:statusData encoding:NSUTF8StringEncoding];
+    return status.length > 0 ? status : @"等待 HUD 子进程初始化悬浮分屏宿主。";
 }
 
 - (BOOL)spawnHUDProcess {

@@ -144,6 +144,9 @@ jobs:
           assert_true_entitlement 'com.apple.private.persona-mgmt'
           assert_true_entitlement 'com.apple.private.security.no-sandbox'
           assert_true_entitlement 'com.apple.private.allow-background-haptics'
+          assert_true_entitlement 'com.apple.frontboard.launchapplications'
+          assert_true_entitlement 'com.apple.runningboard.launchprocess'
+          assert_true_entitlement 'com.apple.runningboard.terminateprocess'
           signed_app_identifier="$(/usr/libexec/PlistBuddy -c 'Print :application-identifier' artifact/KSBall.entitlements.plist)"
           if [[ "$signed_app_identifier" != 'com.kleinersource.ksball' ]]; then
             echo "::error title=Invalid application identifier::Expected com.kleinersource.ksball, got $signed_app_identifier"

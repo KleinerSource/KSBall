@@ -2,6 +2,26 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- HUD 子进程作为悬浮分屏宿主时向被托管应用提供 FrontBoard 工作区服务；主程序不会激活这些服务。 -->
+    <key>BSServiceDomains</key>
+    <dict>
+        <key>com.apple.frontboard</key>
+        <dict>
+            <key>DerivedServiceRestrictions</key>
+            <array>
+                <string>com.apple.uis.applicationStateService</string>
+                <string>com.apple.uis.applicationSupportService</string>
+                <string>com.apple.frontboard.layout-monitor</string>
+            </array>
+            <key>Services</key>
+            <dict>
+                <key>com.apple.frontboard.system-service</key>
+                <dict/>
+                <key>com.apple.frontboard.workspace-service</key>
+                <dict/>
+            </dict>
+        </dict>
+    </dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>zh-Hans</string>
     <key>CFBundleDisplayName</key>
