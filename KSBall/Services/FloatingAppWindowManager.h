@@ -17,7 +17,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)initWithContainerView:(UIView *)containerView applicationBridge:(SystemApplicationBridge *)applicationBridge;
 - (instancetype)init NS_UNAVAILABLE;
-/// 以悬浮窗打开应用；已打开时恢复并移到最前。point 为弹出动画的起点（悬浮条位置）。
+/// 以悬浮窗打开或切换应用；切换时当前展开的应用自动收进边栏。point 为弹出动画的起点（悬浮条位置）。
 - (void)openShortcut:(KSBallShortcut *)shortcut icon:(nullable UIImage *)icon fromPoint:(CGPoint)point;
 /// 锁屏时隐藏全部窗口，场景保持运行。
 - (void)setWindowsHidden:(BOOL)hidden;

@@ -127,6 +127,7 @@ static const CGFloat KSBallFloatingDismissVelocity = 600.0;
 
     UIPanGestureRecognizer *moveRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleMove:)];
     moveRecognizer.maximumNumberOfTouches = 1;
+    moveRecognizer.cancelsTouchesInView = NO;
     [self.titleBarView addGestureRecognizer:moveRecognizer];
 }
 
@@ -136,7 +137,10 @@ static const CGFloat KSBallFloatingDismissVelocity = 600.0;
     [button setImage:[UIImage systemImageNamed:symbol withConfiguration:configuration] forState:UIControlStateNormal];
     button.tintColor = UIColor.secondaryLabelColor;
     button.accessibilityLabel = accessibilityLabel;
-    [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+    KSBallSetLayerHitTestsAsOpaque(button.layer, YES);
+    UITapGestureRecognizer *tapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:action];
+    tapRecognizer.cancelsTouchesInView = NO;
+    [button addGestureRecognizer:tapRecognizer];
     [self.titleBarView addSubview:button];
     return button;
 }

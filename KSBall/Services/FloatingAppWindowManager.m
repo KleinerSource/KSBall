@@ -30,6 +30,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
 @property (nonatomic, strong) UIVisualEffectView *dockPlateView;
 @property (nonatomic) KSBallEdge dockEdge;
 @property (nonatomic) BOOL windowsHidden;
+- (void)minimizeExpandedEntriesExcept:(nullable KSBallFloatingWindowEntry *)focusedEntry;
 @end
 
 @implementation FloatingAppWindowManager
@@ -147,6 +148,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
         [self showFeedback:[NSString stringWithFormat:@"最多同时悬浮 %lu 个应用", (unsigned long)KSBallMaximumFloatingWindows]];
         return;
     }
+    [self minimizeExpandedEntriesExcept:nil];
 
     CGSize screenSize = [self screenSize];
     FloatingAppWindowView *windowView = [[FloatingAppWindowView alloc] initWithDisplayName:shortcut.displayName icon:icon screenSize:screenSize];
@@ -295,10 +297,26 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     [self notifyInteractiveViewsDidChange];
 }
 
+- (void)minimizeExpandedEntriesExcept:(nullable KSBallFloatingWindowEntry *)focusedEntry {
+    KSBallEdge edge = self.dockEdge;
+    BOOL hasDockEdge = self.minimizedEntries.count > 0;
+    for (KSBallFloatingWindowEntry *entry in [self.entries copy]) {
+        if (entry == focusedEntry || [self isEntryMinimized:entry]) {
+            continue;
+        }
+        if (!hasDockEdge) {
+            edge = entry.windowView.center.x < CGRectGetMidX([self bounds]) ? KSBallEdgeLeft : KSBallEdgeRight;
+            hasDockEdge = YES;
+        }
+        [self minimizeEntry:entry toEdge:edge];
+    }
+}
+
 - (void)restoreEntry:(KSBallFloatingWindowEntry *)entry {
     if (![self isEntryMinimized:entry]) {
         return;
     }
+    [self minimizeExpandedEntriesExcept:entry];
     [self.minimizedEntries removeObjectIdenticalTo:entry];
     [self.containerView insertSubview:entry.windowView belowSubview:self.dockPlateView];
     CGRect frame = [self clampedFrame:entry.restoredFrame];
@@ -346,6 +364,7 @@ static const NSTimeInterval KSBallFloatingExitNoticeDuration = 1.2;
     if ([self isEntryMinimized:entry]) {
         return;
     }
+    [self minimizeExpandedEntriesExcept:entry];
     [self.containerView insertSubview:entry.windowView belowSubview:self.dockPlateView];
 }
 
