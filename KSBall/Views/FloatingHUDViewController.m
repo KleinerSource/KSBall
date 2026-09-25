@@ -12,7 +12,7 @@
 static const CGFloat KSBallHandleActiveBarWidth = 6.0;
 static const CGFloat KSBallDragActivationDistance = 8.0;
 static const CGFloat KSBallPreviewIconSize = 108.0;
-// 菜单图标上“以悬浮窗打开”角标相对图标的尺寸。
+// 悬浮窗口模式标识相对当前图标的尺寸。
 static const CGFloat KSBallFloatingBadgeRatio = 0.38;
 // 配置变化后扇形菜单与触摸范围的预览停留时间。
 static const NSTimeInterval KSBallMenuPreviewDuration = 1.6;
@@ -61,11 +61,14 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 @property (nonatomic) CGFloat menuItemSize;
 @property (nonatomic) CGFloat menuHoverRadius;
 @property (nonatomic, strong) UIImageView *previewImageView;
+@property (nonatomic, strong) UIView *previewFloatingBadgeView;
 @property (nonatomic, strong) UILabel *previewNameLabel;
 @property (nonatomic, strong) UILabel *feedbackLabel;
 @property (nonatomic, strong) UIImpactFeedbackGenerator *hoverFeedbackGenerator;
 @property (nonatomic) BOOL menuVisible;
 @property (nonatomic) BOOL previewingMenu;
+@property (nonatomic, strong, nullable) NSTimer *floatingModeTimer;
+@property (nonatomic) BOOL floatingOpenReady;
 @property (nonatomic) BOOL backdropRequested;
 @property (nonatomic) BOOL screenLocked;
 @property (nonatomic) int lockStateToken;
@@ -78,6 +81,9 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 @property (nonatomic) CGPoint dragStartLocation;
 @property (nonatomic) KSBallEdge dragEdge;
 @property (nonatomic) CGFloat dragCenterY;
+- (void)cancelFloatingModeTimer;
+- (void)startFloatingModeTimerForItemView:(UIView *)itemView;
+- (UIView *)floatingBadgeViewForItemSize:(CGFloat)itemSize;
 @end
 
 @implementation FloatingHUDViewController
@@ -139,6 +145,12 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     self.previewImageView.layer.shadowOffset = CGSizeMake(0.0, 6.0);
     self.previewImageView.alpha = 0.0;
     [self.view addSubview:self.previewImageView];
+    self.previewFloatingBadgeView = [self floatingBadgeViewForItemSize:KSBallPreviewIconSize];
+    self.previewFloatingBadgeView.alpha = 0.0;
+    self.previewFloatingBadgeView.transform = CGAffineTransformMakeScale(0.7, 0.7);
+    self.previewFloatingBadgeView.accessibilityLabel = @"悬浮窗打开";
+    [self.previewImageView addSubview:self.previewFloatingBadgeView];
+    KSBallSetLayerAllowsHitTesting(self.previewFloatingBadgeView.layer, NO);
 
     self.previewNameLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     self.previewNameLabel.textColor = UIColor.whiteColor;
@@ -581,6 +593,7 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 
 - (void)dismissMenuAnimated:(BOOL)animated {
     [self cancelMenuPreviewTimer];
+    [self cancelFloatingModeTimer];
     self.previewingMenu = NO;
     [self updateHoveredItemView:nil];
     if (!self.menuVisible && self.menuItemViews.count == 0) {
@@ -644,9 +657,6 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
             iconView.contentMode = UIViewContentModeCenter;
         }
         [itemView addSubview:iconView];
-        if (shortcut.opensInFloatingWindow) {
-            [itemView addSubview:[self floatingBadgeViewForItemSize:size]];
-        }
         // 菜单图标只做展示：选择由悬浮条上的同一次滑动完成，预览期间也不能挡住下层应用的触摸。
         KSBallSetLayerAllowsHitTesting(itemView.layer, NO);
         itemView.accessibilityLabel = shortcut.displayName;
@@ -655,7 +665,7 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     }
 }
 
-// 以悬浮窗打开的应用在图标右下角显示一个窗口角标，展开菜单时即可分辨打开方式。
+// 悬停达到设定时长后，在居中预览图标上显示悬浮窗标识。
 - (UIView *)floatingBadgeViewForItemSize:(CGFloat)itemSize {
     CGFloat badgeSize = round(itemSize * KSBallFloatingBadgeRatio);
     UIView *badgeView = [[UIView alloc] initWithFrame:CGRectMake(itemSize - badgeSize + 2.0, itemSize - badgeSize + 2.0, badgeSize, badgeSize)];
@@ -687,6 +697,7 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     if (itemView == self.hoveredItemView) {
         return;
     }
+    [self cancelFloatingModeTimer];
     UIView *previousItemView = self.hoveredItemView;
     self.hoveredItemView = itemView;
     if (itemView) {
@@ -743,11 +754,48 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
         self.previewImageView.transform = CGAffineTransformIdentity;
         self.previewNameLabel.alpha = 1.0;
     } completion:nil];
+    [self startFloatingModeTimerForItemView:itemView];
 }
 
-- (void)launchShortcut:(KSBallShortcut *)shortcut {
-    if (shortcut.opensInFloatingWindow) {
-        if (self.floatingWindowManager) {
+- (void)cancelFloatingModeTimer {
+    [self.floatingModeTimer invalidate];
+    self.floatingModeTimer = nil;
+    self.floatingOpenReady = NO;
+    self.previewFloatingBadgeView.alpha = 0.0;
+    self.previewFloatingBadgeView.transform = CGAffineTransformMakeScale(0.7, 0.7);
+}
+
+- (void)startFloatingModeTimerForItemView:(UIView *)itemView {
+    if (!self.settingsStore.settings.floatingSplitEnabled) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    __weak UIView *weakItemView = itemView;
+    NSTimeInterval dwellDuration = self.settingsStore.settings.floatingWindowDwellDuration;
+    NSTimer *scheduledTimer = [NSTimer timerWithTimeInterval:dwellDuration repeats:NO block:^(NSTimer *firedTimer) {
+        FloatingHUDViewController *strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
+        if (strongSelf.floatingModeTimer == firedTimer) {
+            strongSelf.floatingModeTimer = nil;
+        }
+        if (strongSelf.hoveredItemView != weakItemView || !strongSelf.menuVisible || !strongSelf.settingsStore.settings.floatingSplitEnabled) {
+            return;
+        }
+        strongSelf.floatingOpenReady = YES;
+        [UIView animateWithDuration:0.16 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+            strongSelf.previewFloatingBadgeView.alpha = 1.0;
+            strongSelf.previewFloatingBadgeView.transform = CGAffineTransformIdentity;
+        } completion:nil];
+    }];
+    self.floatingModeTimer = scheduledTimer;
+    [NSRunLoop.mainRunLoop addTimer:scheduledTimer forMode:NSRunLoopCommonModes];
+}
+
+- (void)launchShortcut:(KSBallShortcut *)shortcut inFloatingWindow:(BOOL)inFloatingWindow {
+    if (inFloatingWindow) {
+        if (self.settingsStore.settings.floatingSplitEnabled && self.floatingWindowManager) {
             UIImage *icon = self.iconsByBundleIdentifier[shortcut.bundleIdentifier.lowercaseString];
             [self.floatingWindowManager openShortcut:shortcut icon:icon fromPoint:[self barCenter]];
             return;
@@ -783,14 +831,17 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
             break;
         case UIGestureRecognizerStateEnded: {
             KSBallShortcut *target = nil;
+            BOOL openInFloatingWindow = NO;
             if (self.menuVisible) {
                 UIView *itemView = [self menuItemViewNearPoint:location];
+                [self updateHoveredItemView:itemView];
                 NSUInteger index = itemView ? [self.menuItemViews indexOfObjectIdenticalTo:itemView] : NSNotFound;
                 target = index < self.menuShortcuts.count ? self.menuShortcuts[index] : nil;
+                openInFloatingWindow = target && self.floatingOpenReady;
             }
             [self dismissMenuAnimated:YES];
             if (target) {
-                [self launchShortcut:target];
+                [self launchShortcut:target inFloatingWindow:openInFloatingWindow];
             }
             break;
         }

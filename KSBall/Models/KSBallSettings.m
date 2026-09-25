@@ -16,6 +16,9 @@ const CGFloat KSBallDefaultBackdropBlur = 1.0;
 const CGFloat KSBallMinimumHandleTouchRadius = 4.0;
 const CGFloat KSBallMaximumHandleTouchRadius = 60.0;
 const CGFloat KSBallDefaultHandleTouchRadius = 38.0;
+const CGFloat KSBallMinimumFloatingWindowDwellDuration = 1.0;
+const CGFloat KSBallMaximumFloatingWindowDwellDuration = 5.0;
+const CGFloat KSBallDefaultFloatingWindowDwellDuration = 2.0;
 static NSInteger const KSBallSettingsSchemaVersion = 1;
 
 @implementation KSBallShortcut
@@ -85,6 +88,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         _iconSize = KSBallDefaultIconSize;
         _iconSpacing = KSBallDefaultIconSpacing;
         _ringSpacing = KSBallDefaultRingSpacing;
+        _floatingWindowDwellDuration = KSBallDefaultFloatingWindowDwellDuration;
         _handleStyle = KSBallHandleStyleAutomatic;
         _handleTouchRadius = KSBallDefaultHandleTouchRadius;
         _backdropStyle = KSBallBackdropStyleAutomatic;
@@ -99,6 +103,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     KSBallSettings *copy = [[[self class] allocWithZone:zone] init];
     copy.enabled = self.enabled;
     copy.floatingSplitEnabled = self.floatingSplitEnabled;
+    copy.floatingWindowDwellDuration = self.floatingWindowDwellDuration;
     copy.edge = self.edge;
     copy.normalizedVerticalPosition = self.normalizedVerticalPosition;
     copy.iconSize = self.iconSize;
@@ -116,6 +121,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 }
 
 - (void)normalize {
+    self.floatingWindowDwellDuration = isfinite(self.floatingWindowDwellDuration) ? MIN(MAX(round(self.floatingWindowDwellDuration), KSBallMinimumFloatingWindowDwellDuration), KSBallMaximumFloatingWindowDwellDuration) : KSBallDefaultFloatingWindowDwellDuration;
     self.normalizedVerticalPosition = MIN(MAX(self.normalizedVerticalPosition, 0.0), 1.0);
     self.edge = self.edge == KSBallEdgeLeft ? KSBallEdgeLeft : KSBallEdgeRight;
     self.iconSize = isfinite(self.iconSize) ? MIN(MAX(self.iconSize, KSBallMinimumIconSize), KSBallMaximumIconSize) : KSBallDefaultIconSize;
@@ -159,7 +165,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 }
 
 - (BOOL)shouldEnableFloatingAppHosting {
-    return self.floatingSplitEnabled && self.hasFloatingWindowShortcuts;
+    return self.floatingSplitEnabled;
 }
 
 - (NSDictionary<NSString *,id> *)dictionaryRepresentation {
@@ -172,6 +178,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         @"schemaVersion": @(KSBallSettingsSchemaVersion),
         @"enabled": @(self.enabled),
         @"floatingSplitEnabled": @(self.floatingSplitEnabled),
+        @"floatingWindowDwellDuration": @(self.floatingWindowDwellDuration),
         @"edge": @(self.edge),
         @"normalizedVerticalPosition": @(self.normalizedVerticalPosition),
         @"iconSize": @(self.iconSize),
@@ -197,6 +204,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     };
     NSNumber *enabled = number(@"enabled");
     NSNumber *floatingSplitEnabled = number(@"floatingSplitEnabled");
+    NSNumber *floatingWindowDwellDuration = number(@"floatingWindowDwellDuration");
     NSNumber *edge = number(@"edge");
     NSNumber *verticalPosition = number(@"normalizedVerticalPosition");
     NSNumber *iconSize = number(@"iconSize");
@@ -210,6 +218,7 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     NSNumber *backdropBlur = number(@"backdropBlur");
     if (enabled) settings.enabled = enabled.boolValue;
     if (floatingSplitEnabled) settings.floatingSplitEnabled = floatingSplitEnabled.boolValue;
+    if (floatingWindowDwellDuration) settings.floatingWindowDwellDuration = floatingWindowDwellDuration.doubleValue;
     if (edge) settings.edge = edge.integerValue;
     if (verticalPosition) settings.normalizedVerticalPosition = verticalPosition.doubleValue;
     if (iconSize) settings.iconSize = iconSize.doubleValue;

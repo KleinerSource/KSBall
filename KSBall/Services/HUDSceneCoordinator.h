@@ -15,7 +15,7 @@ FOUNDATION_EXPORT int KSBallStopHUDProcessMain(pid_t processIdentifier);
 
 @property (nonatomic, readonly, getter=isHUDActive) BOOL HUDActive;
 @property (nonatomic, copy, readonly) NSString *statusDescription;
-/// HUD 子进程最近一次写入的悬浮分屏宿主状态；没有应用设为悬浮窗打开时说明如何启用。
+/// HUD 子进程最近一次写入的悬浮分屏宿主状态。
 @property (nonatomic, copy, readonly) NSString *floatingHostStatusDescription;
 
 + (instancetype)sharedCoordinator;

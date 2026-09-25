@@ -18,6 +18,9 @@ FOUNDATION_EXPORT const CGFloat KSBallDefaultBackdropBlur;
 FOUNDATION_EXPORT const CGFloat KSBallMinimumHandleTouchRadius;
 FOUNDATION_EXPORT const CGFloat KSBallMaximumHandleTouchRadius;
 FOUNDATION_EXPORT const CGFloat KSBallDefaultHandleTouchRadius;
+FOUNDATION_EXPORT const CGFloat KSBallMinimumFloatingWindowDwellDuration;
+FOUNDATION_EXPORT const CGFloat KSBallMaximumFloatingWindowDwellDuration;
+FOUNDATION_EXPORT const CGFloat KSBallDefaultFloatingWindowDwellDuration;
 
 typedef NS_ENUM(NSInteger, KSBallEdge) {
     KSBallEdgeLeft = 0,
@@ -54,7 +57,7 @@ typedef NS_ENUM(NSInteger, KSBallKeyboardPresentationMode) {
 @property (nonatomic, copy, readonly) NSUUID *identifier;
 @property (nonatomic, copy) NSString *bundleIdentifier;
 @property (nonatomic, copy) NSString *displayName;
-/// 从扇形菜单以悬浮窗打开，而不是全屏启动。
+/// 兼容旧版本逐应用开关数据；新版本不再读取此值来决定启动方式。
 @property (nonatomic) BOOL opensInFloatingWindow;
 
 - (instancetype)initWithBundleIdentifier:(NSString *)bundleIdentifier displayName:(NSString *)displayName;
@@ -68,6 +71,8 @@ typedef NS_ENUM(NSInteger, KSBallKeyboardPresentationMode) {
 @property (nonatomic) BOOL enabled;
 /// 总开关关闭时，悬浮应用快捷项改为全屏打开，不初始化悬浮分屏宿主。
 @property (nonatomic) BOOL floatingSplitEnabled;
+/// 在扇形菜单中悬停选中应用后，达到该时长再松手则以悬浮窗打开。
+@property (nonatomic) CGFloat floatingWindowDwellDuration;
 @property (nonatomic) KSBallEdge edge;
 @property (nonatomic) CGFloat normalizedVerticalPosition;
 @property (nonatomic) CGFloat iconSize;
@@ -84,9 +89,9 @@ typedef NS_ENUM(NSInteger, KSBallKeyboardPresentationMode) {
 @property (nonatomic) KSBallKeyboardPresentationMode keyboardPresentationMode;
 @property (nonatomic, strong) NSMutableArray<KSBallShortcut *> *shortcuts;
 
-/// 是否有快捷应用设为以悬浮窗打开；HUD 子进程据此决定是否初始化悬浮分屏宿主。
+/// 兼容旧版本逐应用开关数据；不再用于决定悬浮窗口模式。
 @property (nonatomic, readonly) BOOL hasFloatingWindowShortcuts;
-/// 总开关开启且至少有一个悬浮应用快捷项时，才需要初始化宿主。
+/// 悬浮分屏总开关开启时，HUD 子进程初始化宿主。
 @property (nonatomic, readonly) BOOL shouldEnableFloatingAppHosting;
 
 + (instancetype)defaultSettings;

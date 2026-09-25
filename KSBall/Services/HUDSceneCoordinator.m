@@ -160,7 +160,7 @@ static void KSBallSetFloatingHostStatus(NSString *status) {
 }
 
 // 让 HUD 进程像 FrontBoardAppLauncher 那样成为 FrontBoard 场景宿主，才能托管其它应用的场景。
-// 必须在 UIKit 初始化之前调用；只在有应用设为悬浮窗打开时执行，其余情况 HUD 的启动路径保持不变。
+// 必须在 UIKit 初始化之前调用；仅在悬浮分屏总开关开启时初始化宿主。
 static void KSBallInitializeFloatingAppHosting(void) {
     if (!KSBallSettingsStore.sharedStore.settings.shouldEnableFloatingAppHosting) {
         [KSBallSharedStorage removeDataForKey:KSBallFloatingHostStatusStorageKey];
@@ -760,10 +760,10 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
         return;
     }
     if (self.settingsStore.settings.enabled) {
-        BOOL floatingWindowShortcuts = self.settingsStore.settings.shouldEnableFloatingAppHosting;
-        BOOL floatingHostChanged = floatingWindowShortcuts != self.appliedFloatingAppHostingEnabled;
-        self.appliedFloatingAppHostingEnabled = floatingWindowShortcuts;
-        // 悬浮分屏宿主只能在 HUD 子进程启动时初始化，开关从无到有或从有到无都要重建一次。
+        BOOL floatingAppHostingEnabled = self.settingsStore.settings.shouldEnableFloatingAppHosting;
+        BOOL floatingHostChanged = floatingAppHostingEnabled != self.appliedFloatingAppHostingEnabled;
+        self.appliedFloatingAppHostingEnabled = floatingAppHostingEnabled;
+        // 悬浮分屏宿主只能在 HUD 子进程启动时初始化，总开关改变后需要重建一次。
         if (floatingHostChanged && [self hasLiveHUDProcess]) {
             [self rebuildHUD];
         } else {
@@ -790,9 +790,6 @@ int KSBallStopHUDProcessMain(pid_t processIdentifier) {
 - (NSString *)floatingHostStatusDescription {
     if (!self.settingsStore.settings.floatingSplitEnabled) {
         return @"已关闭：快捷应用将全屏打开，悬浮分屏宿主不会启动。";
-    }
-    if (!self.settingsStore.settings.hasFloatingWindowShortcuts) {
-        return @"未启用：在快捷应用右侧打开开关后，该应用会以悬浮窗打开。";
     }
     NSData *statusData = [KSBallSharedStorage dataForKey:KSBallFloatingHostStatusStorageKey];
     NSString *status = [[NSString alloc] initWithData:statusData encoding:NSUTF8StringEncoding];

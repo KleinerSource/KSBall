@@ -37,6 +37,12 @@ typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
     KSBallLayoutRowCount = 3,
 };
 
+typedef NS_ENUM(NSInteger, KSBallFloatingSplitRow) {
+    KSBallFloatingSplitRowEnabled = 0,
+    KSBallFloatingSplitRowDwellDuration = 1,
+    KSBallFloatingSplitRowCount = 2,
+};
+
 // 快捷应用分组开头的两个操作行，其后才是各个应用。
 typedef NS_ENUM(NSInteger, KSBallShortcutActionRow) {
     KSBallShortcutActionRowAdd = 0,
@@ -111,7 +117,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         case KSBallConfigurationSectionHUD: return 1;
         case KSBallConfigurationSectionAppearance: return KSBallAppearanceRowCount;
         case KSBallConfigurationSectionLayout: return KSBallLayoutRowCount;
-        case KSBallConfigurationSectionFloatingSplit: return 1;
+        case KSBallConfigurationSectionFloatingSplit: return KSBallFloatingSplitRowCount;
         case KSBallConfigurationSectionShortcuts: return KSBallShortcutActionRowCount + self.settingsStore.settings.shortcuts.count;
         case KSBallConfigurationSectionKeyboard: return 1;
         case KSBallConfigurationSectionUpdate: return KSBallUpdateRowCount;
@@ -137,15 +143,15 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     switch (section) {
         case KSBallConfigurationSectionHUD:
-            return @"悬浮条位于屏幕边缘内侧。从悬浮条向内滑动展开扇形菜单，滑到图标上会显示名称并震动，松手即启动；在空白处松手则取消。长按不移动回到此设置页，长按后拖动可调整位置。锁屏界面会自动隐藏悬浮条。";
+            return @"悬浮条位于屏幕边缘内侧。从悬浮条向内滑动展开扇形菜单，滑到图标上会显示名称并震动；停留后松手可按悬浮分屏等待时间选择悬浮窗打开，在空白处松手则取消。长按不移动回到此设置页，长按后拖动可调整位置。锁屏界面会自动隐藏悬浮条。";
         case KSBallConfigurationSectionAppearance:
             return @"“自动”跟随系统的浅色/深色模式。悬浮条设为隐藏后，边缘的触摸区域仍然有效；调整触摸半径时悬浮条旁会显示触摸区域。模糊程度控制毛玻璃的模糊强度，调整时会实时预览。";
         case KSBallConfigurationSectionLayout:
             return @"扇形菜单围绕悬浮条逐圈展开，每圈按屏幕可显示的范围和间距放下尽可能多的图标。同圈间距控制一圈内相邻图标的距离，圈间距控制两圈之间的距离。空间不足时会等比缩小图标。";
         case KSBallConfigurationSectionFloatingSplit:
-            return @"关闭后，快捷应用会全屏打开，已打开的悬浮窗口会关闭，悬浮分屏宿主也会退出以减少内存占用。各应用的悬浮窗开关会保留，重新开启总开关后恢复生效。没有应用启用单项悬浮窗时，不会加载宿主。";
+            return @"选中扇形菜单中的应用并停留达到等待时间后松手，即以悬浮窗打开；未达到时间松手则全屏打开。关闭总开关会关闭已打开的悬浮窗口并退出宿主，以减少内存占用。";
         case KSBallConfigurationSectionShortcuts:
-            return @"在“调整顺序”中以扇形预览长按拖动图标即可排序，靠前的应用位于靠近悬浮条的内圈。左滑应用可删除。\n\n打开应用右侧的开关后，该应用在菜单中以悬浮窗打开（图标带窗口角标）：拖动标题条移动窗口，拖右下角缩放，拖到屏幕左右边缘或点“−”收进边缘，点缩略图恢复、向外甩出关闭。最多同时悬浮 3 个应用。";
+            return @"在“调整顺序”中以扇形预览长按拖动图标即可排序，靠前的应用位于靠近悬浮条的内圈。左滑应用可删除。\n\n使用扇形菜单时，选中应用并等待设定时间，图标右下角出现窗口标识后松手，即以悬浮窗打开；悬浮窗可拖动标题栏移动、拖右下角缩放，也可收进边栏。最多同时悬浮 3 个应用。";
         case KSBallConfigurationSectionKeyboard:
             return @"悬浮框内：键盘随悬浮应用画面缩放，并限制在悬浮窗内。全局：键盘按系统尺寸显示在屏幕底部。";
         case KSBallConfigurationSectionSupport:
@@ -169,7 +175,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         case KSBallConfigurationSectionLayout:
             return [self layoutCellForRow:indexPath.row];
         case KSBallConfigurationSectionFloatingSplit:
-            return [self floatingSplitCell];
+            return indexPath.row == KSBallFloatingSplitRowEnabled ? [self floatingSplitCell] : [self floatingWindowDwellDurationCell];
         case KSBallConfigurationSectionShortcuts:
             return [self shortcutCellForRow:indexPath.row];
         case KSBallConfigurationSectionKeyboard:
@@ -315,21 +321,10 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     }
     KSBallShortcut *shortcut = shortcuts[row - KSBallShortcutActionRowCount];
     UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"ShortcutCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"ShortcutCell"];
-    UISwitch *floatingSwitch = [cell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)cell.accessoryView : nil;
-    if (!floatingSwitch) {
-        floatingSwitch = [UISwitch new];
-        [floatingSwitch addTarget:self action:@selector(floatingWindowSwitchChanged:) forControlEvents:UIControlEventValueChanged];
-        cell.accessoryView = floatingSwitch;
-    }
-    floatingSwitch.tag = row - KSBallShortcutActionRowCount;
-    floatingSwitch.on = shortcut.opensInFloatingWindow;
-    floatingSwitch.accessibilityLabel = [NSString stringWithFormat:@"%@ 以悬浮窗打开", shortcut.displayName];
+    cell.accessoryView = nil;
+    cell.accessoryType = UITableViewCellAccessoryNone;
     cell.textLabel.text = shortcut.displayName;
-    if (shortcut.opensInFloatingWindow && !self.settingsStore.settings.floatingSplitEnabled) {
-        cell.detailTextLabel.text = [NSString stringWithFormat:@"总开关关闭，暂按全屏打开 · %@", shortcut.bundleIdentifier];
-    } else {
-        cell.detailTextLabel.text = shortcut.opensInFloatingWindow ? [NSString stringWithFormat:@"悬浮窗打开 · %@", shortcut.bundleIdentifier] : shortcut.bundleIdentifier;
-    }
+    cell.detailTextLabel.text = shortcut.bundleIdentifier;
     cell.imageView.image = [self listIconForBundleIdentifier:shortcut.bundleIdentifier];
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
@@ -363,6 +358,26 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     }
     toggle.on = self.settingsStore.settings.floatingSplitEnabled;
     cell.textLabel.text = @"启用悬浮分屏";
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    return cell;
+}
+
+- (UITableViewCell *)floatingWindowDwellDurationCell {
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"FloatingWindowDwellDurationCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"FloatingWindowDwellDurationCell"];
+    UIStepper *stepper = [cell.accessoryView isKindOfClass:UIStepper.class] ? (UIStepper *)cell.accessoryView : nil;
+    if (!stepper) {
+        stepper = [UIStepper new];
+        stepper.minimumValue = KSBallMinimumFloatingWindowDwellDuration;
+        stepper.maximumValue = KSBallMaximumFloatingWindowDwellDuration;
+        stepper.stepValue = 1.0;
+        stepper.accessibilityLabel = @"悬浮窗等待时间";
+        [stepper addTarget:self action:@selector(floatingWindowDwellDurationChanged:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = stepper;
+    }
+    CGFloat duration = self.settingsStore.settings.floatingWindowDwellDuration;
+    stepper.value = duration;
+    cell.textLabel.text = @"悬浮窗等待时间";
+    cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f 秒", duration];
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
 }
@@ -479,8 +494,10 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     }];
 }
 
-- (void)floatingWindowSwitchChanged:(UISwitch *)sender {
-    [self.settingsStore setShortcutAtIndex:(NSUInteger)sender.tag opensInFloatingWindow:sender.isOn];
+- (void)floatingWindowDwellDurationChanged:(UIStepper *)sender {
+    [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
+        settings.floatingWindowDwellDuration = sender.value;
+    }];
 }
 
 - (void)keyboardPresentationModeChanged:(UISegmentedControl *)sender {
