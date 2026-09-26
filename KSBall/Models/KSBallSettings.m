@@ -17,6 +17,7 @@ const CGFloat KSBallMinimumHandleTouchRadius = 4.0;
 const CGFloat KSBallMaximumHandleTouchRadius = 60.0;
 const CGFloat KSBallDefaultHandleTouchRadius = 38.0;
 const CGFloat KSBallMaximumFixedTriggerInset = 120.0;
+const CGFloat KSBallMinimumFixedTriggerInset = -30.0;
 static NSInteger const KSBallSettingsSchemaVersion = 1;
 
 @implementation KSBallShortcut
@@ -125,8 +126,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     if (self.fixedTriggerCorners == 0) {
         self.fixedTriggerCorners = KSBallFixedTriggerCornerBottomRight;
     }
-    self.fixedTriggerHorizontalInset = isfinite(self.fixedTriggerHorizontalInset) ? MIN(MAX(self.fixedTriggerHorizontalInset, 0.0), KSBallMaximumFixedTriggerInset) : 0.0;
-    self.fixedTriggerVerticalInset = isfinite(self.fixedTriggerVerticalInset) ? MIN(MAX(self.fixedTriggerVerticalInset, 0.0), KSBallMaximumFixedTriggerInset) : 0.0;
+    self.fixedTriggerHorizontalInset = isfinite(self.fixedTriggerHorizontalInset) ? MIN(MAX(self.fixedTriggerHorizontalInset, KSBallMinimumFixedTriggerInset), KSBallMaximumFixedTriggerInset) : 0.0;
+    self.fixedTriggerVerticalInset = isfinite(self.fixedTriggerVerticalInset) ? MIN(MAX(self.fixedTriggerVerticalInset, KSBallMinimumFixedTriggerInset), KSBallMaximumFixedTriggerInset) : 0.0;
     self.normalizedVerticalPosition = MIN(MAX(self.normalizedVerticalPosition, 0.0), 1.0);
     self.edge = self.edge == KSBallEdgeLeft ? KSBallEdgeLeft : KSBallEdgeRight;
     self.iconSize = isfinite(self.iconSize) ? MIN(MAX(self.iconSize, KSBallMinimumIconSize), KSBallMaximumIconSize) : KSBallDefaultIconSize;

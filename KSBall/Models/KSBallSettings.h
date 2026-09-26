@@ -18,6 +18,7 @@ FOUNDATION_EXPORT const CGFloat KSBallDefaultBackdropBlur;
 FOUNDATION_EXPORT const CGFloat KSBallMinimumHandleTouchRadius;
 FOUNDATION_EXPORT const CGFloat KSBallMaximumHandleTouchRadius;
 FOUNDATION_EXPORT const CGFloat KSBallDefaultHandleTouchRadius;
+FOUNDATION_EXPORT const CGFloat KSBallMinimumFixedTriggerInset;
 FOUNDATION_EXPORT const CGFloat KSBallMaximumFixedTriggerInset;
 
 typedef NS_ENUM(NSInteger, KSBallEdge) {
