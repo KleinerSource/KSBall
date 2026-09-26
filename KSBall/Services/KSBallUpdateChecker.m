@@ -6,6 +6,7 @@ NSNotificationName const KSBallUpdateCheckerDidChangeNotification = @"KSBallUpda
 static NSString * const KSBallUpdateReleaseURLString = @"https://api.github.com/repos/KleinerSource/KSBall/releases/tags/latest";
 static NSString * const KSBallUpdateIgnoredVersionDefaultsKey = @"KSBall.Update.IgnoredVersion";
 static NSString * const KSBallUpdateAutomaticCheckDefaultsKey = @"KSBall.Update.AutomaticCheck";
+static NSString * const KSBallBetaUpdateDefaultsKey = @"KSBall.Update.BetaEnabled";
 static const NSTimeInterval KSBallUpdateRequestTimeout = 15.0;
 
 static NSString *KSBallTrimmedString(id value) {
@@ -189,6 +190,8 @@ static NSString *KSBallTrimmedString(id value) {
 
 @interface KSBallUpdateChecker ()
 @property (nonatomic, copy) NSURL *releaseURL;
+@property (nonatomic, copy) NSURL *betaReleaseURL;
+@property (nonatomic, copy) NSString *currentUpdateChannel;
 @property (nonatomic, strong) NSUserDefaults *userDefaults;
 @property (nonatomic, copy) KSBallUpdateFetcher fetcher;
 // 检查进行中再次请求时的回调，在同一次检查结束后一并调用。
@@ -218,6 +221,11 @@ static NSString *KSBallTrimmedString(id value) {
     self = [super init];
     if (self) {
         _releaseURL = [releaseURL copy];
+        NSURLComponents *betaComponents = [NSURLComponents componentsWithURL:releaseURL resolvingAgainstBaseURL:NO];
+        betaComponents.path = [[betaComponents.path stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"dev"];
+        _betaReleaseURL = [betaComponents.URL copy];
+        NSString *buildChannel = NSBundle.mainBundle.infoDictionary[@"KSBallUpdateChannel"];
+        _currentUpdateChannel = [buildChannel isEqualToString:@"dev"] ? @"dev" : @"latest";
         _currentVersion = currentVersion;
         _userDefaults = userDefaults;
         _pendingCompletions = [NSMutableArray array];
@@ -243,6 +251,22 @@ static NSString *KSBallTrimmedString(id value) {
     [self.userDefaults setBool:automaticCheckEnabled forKey:KSBallUpdateAutomaticCheckDefaultsKey];
 }
 
+- (BOOL)isBetaUpdatesEnabled {
+    id value = [self.userDefaults objectForKey:KSBallBetaUpdateDefaultsKey];
+    return [value isKindOfClass:NSNumber.class] ? [value boolValue] : [self.currentUpdateChannel isEqualToString:@"dev"];
+}
+
+- (void)setBetaUpdatesEnabled:(BOOL)betaUpdatesEnabled {
+    if (self.betaUpdatesEnabled == betaUpdatesEnabled) {
+        return;
+    }
+    [self.userDefaults setBool:betaUpdatesEnabled forKey:KSBallBetaUpdateDefaultsKey];
+    self.latestRelease = nil;
+    self.lastError = nil;
+    self.lastCheckDate = nil;
+    [self postChange];
+}
+
 - (void)checkForUpdatesWithCompletion:(KSBallUpdateCheckCompletion)completion {
     if (completion) {
         [self.pendingCompletions addObject:[completion copy]];
@@ -253,7 +277,8 @@ static NSString *KSBallTrimmedString(id value) {
     self.checking = YES;
     [self postChange];
 
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:self.releaseURL cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:KSBallUpdateRequestTimeout];
+    NSURL *releaseURL = self.betaUpdatesEnabled ? self.betaReleaseURL : self.releaseURL;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:releaseURL cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:KSBallUpdateRequestTimeout];
     [request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
     [request setValue:@"2022-11-28" forHTTPHeaderField:@"X-GitHub-Api-Version"];
     [request setValue:[NSString stringWithFormat:@"KSBall/%@", self.currentVersion.stringValue] forHTTPHeaderField:@"User-Agent"];
@@ -283,7 +308,7 @@ static NSString *KSBallTrimmedString(id value) {
     id object = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     KSBallRelease *release = [KSBallRelease releaseFromJSONObject:object];
     if (!release) {
-        *error = [NSError errorWithDomain:KSBallUpdateErrorDomain code:KSBallUpdateErrorInvalidRelease userInfo:@{NSLocalizedDescriptionKey: @"最新发布中没有可供 TrollStore 安装的构建。"}];
+        *error = [NSError errorWithDomain:KSBallUpdateErrorDomain code:KSBallUpdateErrorInvalidRelease userInfo:@{NSLocalizedDescriptionKey: @"所选更新通道中没有可供 TrollStore 安装的构建。"}];
     }
     return release;
 }
@@ -308,15 +333,24 @@ static NSString *KSBallTrimmedString(id value) {
 }
 
 - (BOOL)isUpdateRelease:(KSBallRelease *)release {
+    NSString *expectedTag = self.betaUpdatesEnabled ? @"dev" : @"latest";
+    if (![release.tagName isEqualToString:expectedTag]) {
+        return NO;
+    }
+    if (![expectedTag isEqualToString:self.currentUpdateChannel]) {
+        return YES;
+    }
     return [release.version compare:self.currentVersion] == NSOrderedDescending;
 }
 
 - (BOOL)isReleaseIgnored:(KSBallRelease *)release {
-    return [[self.userDefaults stringForKey:KSBallUpdateIgnoredVersionDefaultsKey] isEqualToString:release.version.stringValue];
+    NSString *ignoredRelease = [NSString stringWithFormat:@"%@:%@", release.tagName, release.version.stringValue];
+    return [[self.userDefaults stringForKey:KSBallUpdateIgnoredVersionDefaultsKey] isEqualToString:ignoredRelease];
 }
 
 - (void)ignoreRelease:(KSBallRelease *)release {
-    [self.userDefaults setObject:release.version.stringValue forKey:KSBallUpdateIgnoredVersionDefaultsKey];
+    NSString *ignoredRelease = [NSString stringWithFormat:@"%@:%@", release.tagName, release.version.stringValue];
+    [self.userDefaults setObject:ignoredRelease forKey:KSBallUpdateIgnoredVersionDefaultsKey];
 }
 
 + (NSURL *)installURLForRelease:(KSBallRelease *)release {

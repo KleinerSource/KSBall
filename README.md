@@ -43,16 +43,16 @@ build 号每次构建都 +1。本地运行 `python3 Scripts/bump_version.py` 可
 
 推送、拉取请求和手动触发都会运行 `.github/workflows/build-ios.yml`：先测试版本策略并计算本次版本号，再用 macOS runner 构建未签名的 TrollStore `.tipa`，上传 `KSBall_<版本>.tipa`、SHA-256、导出的 entitlements 和 `xcodebuild.log` 工件；最终 TrollStore 签名仍在下载工件后执行。
 
-main 分支的推送与手动运行在构建成功后还会：
+`main` 和 `dev` 分支的推送与手动运行在构建成功后还会：
 
-1. 以 `chore: bump build metadata to <版本> [skip ci]` 提交写回 `Info.plist` 并推送到 main。因此本地再次推送前需要先 `git pull --rebase`。
-2. 删除并重建滚动预发布 `latest`，上传安装包、SHA-256 与构建日志；说明由 `Scripts/generate_release_notes.sh` 生成，列出上一次发布以来的提交。
+1. 以 `chore: bump build metadata to <版本> [skip ci]` 提交写回 `Info.plist` 并推回触发构建的分支。因此本地再次推送前需要先 `git pull --rebase`。
+2. `main` 删除并重建 `latest` 标准版预发布，`dev` 删除并重建 `dev` 开发版预发布；上传安装包、SHA-256 与构建日志。说明由 `Scripts/generate_release_notes.sh` 生成，列出上一次同通道发布以来的提交。
 
 其它分支与拉取请求只产出 Actions 工件，不写回版本号，也不更新 Release。失败或被取消的构建不会写回版本号，其中的提交会并入下一次成功发布的说明。
 
 ## 检查更新
 
-配置页“软件更新”分区通过 GitHub API 读取 `KleinerSource/KSBall` 的 `latest` 预发布，按 `x.y.z+build` 与当前版本比较：
+配置页“软件更新”分区默认读取 GitHub `latest` 标准版预发布；打开“检查开发版更新”后改为读取 `dev` 开发版预发布。切换更新通道时会安装所选通道的版本，因此可在开发版和标准版之间切换（包括降级到标准版）。`main` 构建发布 `latest`，`dev` 构建发布 `dev`。
 
 - 开启“自动检查更新”（默认开启）时，打开 KSBall 或回到前台会静默检查，成功后 6 小时内不再重复请求；发现未忽略的新版本时弹窗显示更新内容。
 - 点“检查更新”立即检查，即使该版本已被忽略也会提示，失败时显示原因。
