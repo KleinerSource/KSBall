@@ -4,7 +4,6 @@
 #import "SystemApplicationBridge.h"
 #import <math.h>
 #import <notify.h>
-#import <dlfcn.h>
 #import <objc/message.h>
 
 // 悬浮条的边距、宽高与可移动范围定义在 KSBallFanLayout 中，与设置页的排序编辑器共用。
@@ -36,51 +35,6 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     }
     for (CALayer *sublayer in layer.sublayers) {
         KSBallSetLayerAllowsHitTesting(sublayer, allowsHitTesting);
-    }
-}
-
-static id KSBallSystemGestureManager(void) {
-    static id manager;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        Class managerClass = NSClassFromString(@"SBSystemGestureManager");
-        if (!managerClass) {
-            dlopen("/System/Library/PrivateFrameworks/SpringBoard.framework/SpringBoard", RTLD_LAZY | RTLD_LOCAL);
-            managerClass = NSClassFromString(@"SBSystemGestureManager");
-        }
-        SEL selector = NSSelectorFromString(@"mainDisplayManager");
-        if ([managerClass respondsToSelector:selector]) {
-            manager = ((id (*)(id, SEL))objc_msgSend)(managerClass, selector);
-        }
-    });
-    return manager;
-}
-
-static void KSBallPrioritizePanOverSystemGesture(UIGestureRecognizer *panRecognizer, KSBallFixedTriggerCorner corner) {
-    NSOperatingSystemVersion version = NSProcessInfo.processInfo.operatingSystemVersion;
-    if (version.majorVersion < 16 || version.majorVersion > 17) {
-        return;
-    }
-    id manager = KSBallSystemGestureManager();
-    SEL selector = NSSelectorFromString(@"gestureRecognizerOfType:shouldRequireFailureOfGestureRecognizer:");
-    if (![manager respondsToSelector:selector]) {
-        return;
-    }
-
-    // iOS 16–17 的 SpringBoard 手势类型：通知中心 1、控制中心 3、主屏幕 4、任务切换 5、应用切换 6。
-    NSMutableArray<NSNumber *> *types = [NSMutableArray array];
-    if (corner == KSBallFixedTriggerCornerTopLeft) {
-        [types addObject:@1];
-    } else if (corner == KSBallFixedTriggerCornerTopRight) {
-        [types addObject:@3];
-    } else {
-        [types addObjectsFromArray:@[@4, @5, @6]];
-    }
-    for (NSNumber *type in types) {
-        @try {
-            ((void (*)(id, SEL, unsigned long long, id))objc_msgSend)(manager, selector, type.unsignedLongLongValue, panRecognizer);
-        } @catch (__unused NSException *exception) {
-        }
     }
 }
 
@@ -296,6 +250,31 @@ static void KSBallPrioritizePanOverSystemGesture(UIGestureRecognizer *panRecogni
     [self layoutHandle];
 }
 
+- (UIRectEdge)preferredScreenEdgesDeferringSystemGestures {
+    KSBallSettings *settings = self.settingsStore.settings;
+    if (settings.menuTriggerMode != KSBallMenuTriggerModeFixedCorners || self.screenLocked) {
+        return UIRectEdgeNone;
+    }
+    if (CGRectGetWidth(self.view.bounds) > CGRectGetHeight(self.view.bounds) && !settings.landscapeTriggerEnabled) {
+        return UIRectEdgeNone;
+    }
+
+    UIRectEdge edges = UIRectEdgeNone;
+    if (settings.fixedTriggerCorners & (KSBallFixedTriggerCornerTopLeft | KSBallFixedTriggerCornerBottomLeft)) {
+        edges |= UIRectEdgeLeft;
+    }
+    if (settings.fixedTriggerCorners & (KSBallFixedTriggerCornerTopRight | KSBallFixedTriggerCornerBottomRight)) {
+        edges |= UIRectEdgeRight;
+    }
+    if (settings.fixedTriggerCorners & (KSBallFixedTriggerCornerTopLeft | KSBallFixedTriggerCornerTopRight)) {
+        edges |= UIRectEdgeTop;
+    }
+    if (settings.fixedTriggerCorners & (KSBallFixedTriggerCornerBottomLeft | KSBallFixedTriggerCornerBottomRight)) {
+        edges |= UIRectEdgeBottom;
+    }
+    return edges;
+}
+
 - (void)reloadFromSettings {
     if (!self.isViewLoaded || self.dragging) {
         return;
@@ -317,6 +296,7 @@ static void KSBallPrioritizePanOverSystemGesture(UIGestureRecognizer *panRecogni
     self.appliedTriggerSignature = triggerSignature;
     self.appliedHandleTouchRadius = settings.handleTouchRadius;
 
+    [self setNeedsUpdateOfScreenEdgesDeferringSystemGestures];
     [self reloadIcons];
     // 用户正在滑动选择时不打断当前菜单。
     if (self.menuVisible && !self.previewingMenu && !triggerChanged) {
@@ -352,6 +332,7 @@ static void KSBallPrioritizePanOverSystemGesture(UIGestureRecognizer *panRecogni
     if (!self.isViewLoaded) {
         return;
     }
+    [self setNeedsUpdateOfScreenEdgesDeferringSystemGestures];
     if (screenLocked) {
         // 切换 enabled 会取消进行中的滑动或拖动。
         NSMutableArray<UIView *> *triggerViews = [NSMutableArray arrayWithObject:self.handleView];
@@ -452,7 +433,6 @@ static void KSBallPrioritizePanOverSystemGesture(UIGestureRecognizer *panRecogni
             panRecognizer.maximumNumberOfTouches = 1;
             panRecognizer.delegate = self;
             [triggerView addGestureRecognizer:panRecognizer];
-            KSBallPrioritizePanOverSystemGesture(panRecognizer, corner);
             UILongPressGestureRecognizer *longPressRecognizer = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
             longPressRecognizer.minimumPressDuration = 0.45;
             longPressRecognizer.allowableMovement = 10.0;
