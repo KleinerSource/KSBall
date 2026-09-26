@@ -10,8 +10,6 @@
 static const CGFloat KSBallHandleActiveBarWidth = 6.0;
 static const CGFloat KSBallDragActivationDistance = 8.0;
 static const CGFloat KSBallPreviewIconSize = 108.0;
-static const CGFloat KSBallFixedTriggerSafeAreaPadding = 8.0;
-static const CGFloat KSBallFixedTriggerBottomSafeAreaPadding = 2.0;
 // 配置变化后扇形菜单与触摸范围的预览停留时间。
 static const NSTimeInterval KSBallMenuPreviewDuration = 1.6;
 static const char * const KSBallLockStateNotification = "com.apple.springboard.lockstate";
@@ -447,13 +445,8 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         CGFloat diameter = settings.handleTouchRadius * 2.0;
         CGFloat maxX = MAX(0.0, CGRectGetWidth(bounds) - diameter);
         CGFloat maxY = MAX(0.0, CGRectGetHeight(bounds) - diameter);
-        UIEdgeInsets safeAreaInsets = self.view.safeAreaInsets;
-        CGFloat leftInset = safeAreaInsets.left + KSBallFixedTriggerSafeAreaPadding;
-        CGFloat rightInset = safeAreaInsets.right + KSBallFixedTriggerSafeAreaPadding;
-        CGFloat topInset = safeAreaInsets.top + KSBallFixedTriggerSafeAreaPadding;
-        CGFloat bottomInset = safeAreaInsets.bottom + KSBallFixedTriggerBottomSafeAreaPadding;
-        CGFloat x = left ? leftInset + settings.fixedTriggerHorizontalInset : CGRectGetWidth(bounds) - rightInset - settings.fixedTriggerHorizontalInset - diameter;
-        CGFloat y = top ? topInset + settings.fixedTriggerVerticalInset : CGRectGetHeight(bounds) - bottomInset - settings.fixedTriggerVerticalInset - diameter;
+        CGFloat x = left ? settings.fixedTriggerHorizontalInset : CGRectGetWidth(bounds) - settings.fixedTriggerHorizontalInset - diameter;
+        CGFloat y = top ? settings.fixedTriggerVerticalInset : CGRectGetHeight(bounds) - settings.fixedTriggerVerticalInset - diameter;
         x = MIN(MAX(x, 0.0), maxX);
         y = MIN(MAX(y, 0.0), maxY);
         triggerView.frame = CGRectMake(x, y, diameter, diameter);
