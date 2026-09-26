@@ -10,9 +10,6 @@
 static const CGFloat KSBallHandleActiveBarWidth = 6.0;
 static const CGFloat KSBallDragActivationDistance = 8.0;
 static const CGFloat KSBallPreviewIconSize = 108.0;
-static const CGFloat KSBallFixedTriggerMinimumHorizontalInset = 28.0;
-static const CGFloat KSBallFixedTriggerMinimumTopInset = 32.0;
-static const CGFloat KSBallFixedTriggerMinimumBottomInset = 24.0;
 static const CGFloat KSBallFixedTriggerSafeAreaPadding = 8.0;
 static const CGFloat KSBallFixedTriggerBottomSafeAreaPadding = 2.0;
 // 配置变化后扇形菜单与触摸范围的预览停留时间。
@@ -255,6 +252,31 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     [self layoutHandle];
 }
 
+- (UIRectEdge)preferredScreenEdgesDeferringSystemGestures {
+    KSBallSettings *settings = self.settingsStore.settings;
+    if (settings.menuTriggerMode != KSBallMenuTriggerModeFixedCorners || self.screenLocked) {
+        return UIRectEdgeNone;
+    }
+    if (CGRectGetWidth(self.view.bounds) > CGRectGetHeight(self.view.bounds) && !settings.landscapeTriggerEnabled) {
+        return UIRectEdgeNone;
+    }
+
+    UIRectEdge edges = UIRectEdgeNone;
+    if (settings.fixedTriggerCorners & (KSBallFixedTriggerCornerTopLeft | KSBallFixedTriggerCornerBottomLeft)) {
+        edges |= UIRectEdgeLeft;
+    }
+    if (settings.fixedTriggerCorners & (KSBallFixedTriggerCornerTopRight | KSBallFixedTriggerCornerBottomRight)) {
+        edges |= UIRectEdgeRight;
+    }
+    if (settings.fixedTriggerCorners & (KSBallFixedTriggerCornerTopLeft | KSBallFixedTriggerCornerTopRight)) {
+        edges |= UIRectEdgeTop;
+    }
+    if (settings.fixedTriggerCorners & (KSBallFixedTriggerCornerBottomLeft | KSBallFixedTriggerCornerBottomRight)) {
+        edges |= UIRectEdgeBottom;
+    }
+    return edges;
+}
+
 - (void)reloadFromSettings {
     if (!self.isViewLoaded || self.dragging) {
         return;
@@ -276,6 +298,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     self.appliedTriggerSignature = triggerSignature;
     self.appliedHandleTouchRadius = settings.handleTouchRadius;
 
+    [self setNeedsUpdateOfScreenEdgesDeferringSystemGestures];
     [self reloadIcons];
     // 用户正在滑动选择时不打断当前菜单。
     if (self.menuVisible && !self.previewingMenu && !triggerChanged) {
@@ -311,6 +334,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     if (!self.isViewLoaded) {
         return;
     }
+    [self setNeedsUpdateOfScreenEdgesDeferringSystemGestures];
     if (screenLocked) {
         // 切换 enabled 会取消进行中的滑动或拖动。
         NSMutableArray<UIView *> *triggerViews = [NSMutableArray arrayWithObject:self.handleView];
@@ -424,10 +448,10 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         CGFloat maxX = MAX(0.0, CGRectGetWidth(bounds) - diameter);
         CGFloat maxY = MAX(0.0, CGRectGetHeight(bounds) - diameter);
         UIEdgeInsets safeAreaInsets = self.view.safeAreaInsets;
-        CGFloat leftInset = MAX(KSBallFixedTriggerMinimumHorizontalInset, safeAreaInsets.left + KSBallFixedTriggerSafeAreaPadding);
-        CGFloat rightInset = MAX(KSBallFixedTriggerMinimumHorizontalInset, safeAreaInsets.right + KSBallFixedTriggerSafeAreaPadding);
-        CGFloat topInset = MAX(KSBallFixedTriggerMinimumTopInset, safeAreaInsets.top + KSBallFixedTriggerSafeAreaPadding);
-        CGFloat bottomInset = MAX(KSBallFixedTriggerMinimumBottomInset, safeAreaInsets.bottom + KSBallFixedTriggerBottomSafeAreaPadding);
+        CGFloat leftInset = safeAreaInsets.left + KSBallFixedTriggerSafeAreaPadding;
+        CGFloat rightInset = safeAreaInsets.right + KSBallFixedTriggerSafeAreaPadding;
+        CGFloat topInset = safeAreaInsets.top + KSBallFixedTriggerSafeAreaPadding;
+        CGFloat bottomInset = safeAreaInsets.bottom + KSBallFixedTriggerBottomSafeAreaPadding;
         CGFloat x = left ? leftInset + settings.fixedTriggerHorizontalInset : CGRectGetWidth(bounds) - rightInset - settings.fixedTriggerHorizontalInset - diameter;
         CGFloat y = top ? topInset + settings.fixedTriggerVerticalInset : CGRectGetHeight(bounds) - bottomInset - settings.fixedTriggerVerticalInset - diameter;
         x = MIN(MAX(x, 0.0), maxX);
