@@ -34,7 +34,7 @@ jobs:
 
       # 新增/删除/增强功能：次版本号 +1 且补丁号归零；优化/修复/改进：补丁号 +1；
       # 构建、CI、文档、测试与编译修复只增加 build；build 每次构建都 +1。
-      # 这里只改工作区里的 Info.plist，main 分支构建成功后才由 release job 写回仓库。
+      # 这里只改工作区里的 Info.plist，main/dev 分支构建成功后才由 release job 写回仓库。
       - name: Compute build version
         id: version
         run: |
@@ -42,8 +42,10 @@ jobs:
           version="$(python3 Scripts/bump_version.py --auto)"
           if [[ "$GITHUB_REF_NAME" == "dev" ]]; then
             /usr/libexec/PlistBuddy -c 'Set :KSBallUpdateChannel dev' KSBall/Info.plist
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'KSBall dev'" KSBall/Info.plist
           else
             /usr/libexec/PlistBuddy -c 'Set :KSBallUpdateChannel latest' KSBall/Info.plist
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName KSBall" KSBall/Info.plist
           fi
           echo "构建版本：${version}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
