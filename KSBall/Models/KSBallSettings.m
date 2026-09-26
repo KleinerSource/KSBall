@@ -19,6 +19,7 @@ const CGFloat KSBallDefaultHandleTouchRadius = 38.0;
 const CGFloat KSBallMinimumFloatingWindowDwellDuration = 1.0;
 const CGFloat KSBallMaximumFloatingWindowDwellDuration = 5.0;
 const CGFloat KSBallDefaultFloatingWindowDwellDuration = 2.0;
+const CGFloat KSBallMaximumFixedTriggerInset = 120.0;
 static NSInteger const KSBallSettingsSchemaVersion = 1;
 
 @implementation KSBallShortcut
@@ -79,6 +80,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     settings.menuTriggerMode = KSBallMenuTriggerModeHandle;
     settings.fixedTriggerCorners = KSBallFixedTriggerCornerBottomRight;
     settings.landscapeTriggerEnabled = YES;
+    settings.fixedTriggerHorizontalInset = 0.0;
+    settings.fixedTriggerVerticalInset = 0.0;
     settings.edge = KSBallEdgeRight;
     settings.normalizedVerticalPosition = 0.5;
     settings.shortcuts = [NSMutableArray array];
@@ -109,6 +112,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     copy.menuTriggerMode = self.menuTriggerMode;
     copy.fixedTriggerCorners = self.fixedTriggerCorners;
     copy.landscapeTriggerEnabled = self.landscapeTriggerEnabled;
+    copy.fixedTriggerHorizontalInset = self.fixedTriggerHorizontalInset;
+    copy.fixedTriggerVerticalInset = self.fixedTriggerVerticalInset;
     copy.edge = self.edge;
     copy.normalizedVerticalPosition = self.normalizedVerticalPosition;
     copy.iconSize = self.iconSize;
@@ -133,6 +138,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     if (self.fixedTriggerCorners == 0) {
         self.fixedTriggerCorners = KSBallFixedTriggerCornerBottomRight;
     }
+    self.fixedTriggerHorizontalInset = isfinite(self.fixedTriggerHorizontalInset) ? MIN(MAX(self.fixedTriggerHorizontalInset, 0.0), KSBallMaximumFixedTriggerInset) : 0.0;
+    self.fixedTriggerVerticalInset = isfinite(self.fixedTriggerVerticalInset) ? MIN(MAX(self.fixedTriggerVerticalInset, 0.0), KSBallMaximumFixedTriggerInset) : 0.0;
     self.normalizedVerticalPosition = MIN(MAX(self.normalizedVerticalPosition, 0.0), 1.0);
     self.edge = self.edge == KSBallEdgeLeft ? KSBallEdgeLeft : KSBallEdgeRight;
     self.iconSize = isfinite(self.iconSize) ? MIN(MAX(self.iconSize, KSBallMinimumIconSize), KSBallMaximumIconSize) : KSBallDefaultIconSize;
@@ -189,6 +196,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         @"menuTriggerMode": @(self.menuTriggerMode),
         @"fixedTriggerCorners": @(self.fixedTriggerCorners),
         @"landscapeTriggerEnabled": @(self.landscapeTriggerEnabled),
+        @"fixedTriggerHorizontalInset": @(self.fixedTriggerHorizontalInset),
+        @"fixedTriggerVerticalInset": @(self.fixedTriggerVerticalInset),
         @"edge": @(self.edge),
         @"normalizedVerticalPosition": @(self.normalizedVerticalPosition),
         @"iconSize": @(self.iconSize),
@@ -217,6 +226,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     NSNumber *menuTriggerMode = number(@"menuTriggerMode");
     NSNumber *fixedTriggerCorners = number(@"fixedTriggerCorners");
     NSNumber *landscapeTriggerEnabled = number(@"landscapeTriggerEnabled");
+    NSNumber *fixedTriggerHorizontalInset = number(@"fixedTriggerHorizontalInset");
+    NSNumber *fixedTriggerVerticalInset = number(@"fixedTriggerVerticalInset");
     NSNumber *edge = number(@"edge");
     NSNumber *verticalPosition = number(@"normalizedVerticalPosition");
     NSNumber *iconSize = number(@"iconSize");
@@ -233,6 +244,8 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     if (menuTriggerMode) settings.menuTriggerMode = menuTriggerMode.integerValue;
     if (fixedTriggerCorners) settings.fixedTriggerCorners = fixedTriggerCorners.unsignedIntegerValue;
     if (landscapeTriggerEnabled) settings.landscapeTriggerEnabled = landscapeTriggerEnabled.boolValue;
+    if (fixedTriggerHorizontalInset) settings.fixedTriggerHorizontalInset = fixedTriggerHorizontalInset.doubleValue;
+    if (fixedTriggerVerticalInset) settings.fixedTriggerVerticalInset = fixedTriggerVerticalInset.doubleValue;
     if (edge) settings.edge = edge.integerValue;
     if (verticalPosition) settings.normalizedVerticalPosition = verticalPosition.doubleValue;
     if (iconSize) settings.iconSize = iconSize.doubleValue;
