@@ -18,6 +18,7 @@ FOUNDATION_EXPORT const CGFloat KSBallDefaultBackdropBlur;
 FOUNDATION_EXPORT const CGFloat KSBallMinimumHandleTouchRadius;
 FOUNDATION_EXPORT const CGFloat KSBallMaximumHandleTouchRadius;
 FOUNDATION_EXPORT const CGFloat KSBallDefaultHandleTouchRadius;
+FOUNDATION_EXPORT const CGFloat KSBallMaximumFixedTriggerInset;
 
 typedef NS_ENUM(NSInteger, KSBallEdge) {
     KSBallEdgeLeft = 0,
@@ -73,6 +74,8 @@ typedef NS_ENUM(NSInteger, KSBallBackdropStyle) {
 @property (nonatomic) KSBallMenuTriggerMode menuTriggerMode;
 @property (nonatomic) KSBallFixedTriggerCorner fixedTriggerCorners;
 @property (nonatomic) BOOL landscapeTriggerEnabled;
+@property (nonatomic) CGFloat fixedTriggerHorizontalInset;
+@property (nonatomic) CGFloat fixedTriggerVerticalInset;
 @property (nonatomic) KSBallEdge edge;
 @property (nonatomic) CGFloat normalizedVerticalPosition;
 @property (nonatomic) CGFloat iconSize;

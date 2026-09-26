@@ -42,11 +42,26 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 @property (nonatomic, copy) NSArray<UIView *> *interactiveViews;
 @end
 
+@interface KSBallFixedTriggerView : UIView
+@end
+
+@implementation KSBallFixedTriggerView
+
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    CGFloat radius = MIN(CGRectGetWidth(self.bounds), CGRectGetHeight(self.bounds)) / 2.0;
+    CGFloat dx = point.x - CGRectGetMidX(self.bounds);
+    CGFloat dy = point.y - CGRectGetMidY(self.bounds);
+    return dx * dx + dy * dy <= radius * radius;
+}
+
+@end
+
 @implementation KSBallHUDCanvasView
 
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
     for (UIView *view in self.interactiveViews) {
-        if (!view.hidden && view.alpha > 0.01 && CGRectContainsPoint(view.frame, point)) {
+        CGPoint pointInView = [view convertPoint:point fromView:self];
+        if (!view.hidden && view.alpha > 0.01 && [view pointInside:pointInView withEvent:event]) {
             return YES;
         }
     }
@@ -243,7 +258,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     NSString *shortcutIdentifiers = [sortedIdentifiers componentsJoinedByString:@","];
     NSString *menuLayoutSignature = [NSString stringWithFormat:@"%.2f|%.2f|%.2f|%@", settings.iconSize, settings.iconSpacing, settings.ringSpacing, shortcutIdentifiers];
     NSString *backdropSignature = [NSString stringWithFormat:@"%ld|%.2f", (long)settings.backdropStyle, settings.backdropBlur];
-    NSString *triggerSignature = [NSString stringWithFormat:@"%ld|%lu|%d", (long)settings.menuTriggerMode, (unsigned long)settings.fixedTriggerCorners, settings.landscapeTriggerEnabled];
+    NSString *triggerSignature = [NSString stringWithFormat:@"%ld|%lu|%d|%.1f|%.1f", (long)settings.menuTriggerMode, (unsigned long)settings.fixedTriggerCorners, settings.landscapeTriggerEnabled, settings.fixedTriggerHorizontalInset, settings.fixedTriggerVerticalInset];
     BOOL menuLayoutChanged = self.hasAppliedSettings && ![menuLayoutSignature isEqualToString:self.appliedMenuLayoutSignature];
     BOOL backdropChanged = self.hasAppliedSettings && ![backdropSignature isEqualToString:self.appliedBackdropSignature];
     BOOL triggerChanged = self.hasAppliedSettings && ![triggerSignature isEqualToString:self.appliedTriggerSignature];
@@ -263,7 +278,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         [self dismissMenuAnimated:NO];
     }
     [self layoutHandle];
-    if (touchRadiusChanged && !self.screenLocked) {
+    if ((touchRadiusChanged || triggerChanged) && !self.screenLocked) {
         [self flashTouchArea];
     }
     if ((menuLayoutChanged || backdropChanged) && !self.screenLocked && settings.shortcuts.count > 0) {
@@ -349,7 +364,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     self.touchAreaView.frame = self.handleView.bounds;
     self.touchAreaView.layer.cornerRadius = MIN(touchSize.width, touchSize.height) / 2.0;
     [self layoutBar];
-    [self layoutFixedTriggersWithTouchSize:touchSize];
+    [self layoutFixedTriggers];
     BOOL landscapeDisabled = CGRectGetWidth(self.view.bounds) > CGRectGetHeight(self.view.bounds) && !self.settingsStore.settings.landscapeTriggerEnabled;
     BOOL triggersDisabled = self.screenLocked || landscapeDisabled;
     self.handleView.hidden = triggersDisabled || self.settingsStore.settings.menuTriggerMode != KSBallMenuTriggerModeHandle;
@@ -359,7 +374,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
     [self refreshHitTargets];
 }
 
-- (void)layoutFixedTriggersWithTouchSize:(CGSize)touchSize {
+- (void)layoutFixedTriggers {
     NSArray<NSNumber *> *corners = @[@(KSBallFixedTriggerCornerTopLeft), @(KSBallFixedTriggerCornerTopRight), @(KSBallFixedTriggerCornerBottomLeft), @(KSBallFixedTriggerCornerBottomRight)];
     CGRect bounds = self.view.bounds;
     KSBallSettings *settings = self.settingsStore.settings;
@@ -368,7 +383,7 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
         KSBallFixedTriggerCorner corner = cornerValue.unsignedIntegerValue;
         UIView *triggerView = self.fixedTriggerViews[cornerValue];
         if (!triggerView) {
-            triggerView = [[UIView alloc] initWithFrame:CGRectZero];
+            triggerView = [[KSBallFixedTriggerView alloc] initWithFrame:CGRectZero];
             triggerView.tag = corner;
             triggerView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.012];
             triggerView.isAccessibilityElement = YES;
@@ -398,12 +413,20 @@ static void KSBallSetLayerAllowsHitTesting(CALayer *layer, BOOL allowsHitTesting
 
         BOOL left = corner == KSBallFixedTriggerCornerTopLeft || corner == KSBallFixedTriggerCornerBottomLeft;
         BOOL top = corner == KSBallFixedTriggerCornerTopLeft || corner == KSBallFixedTriggerCornerTopRight;
-        CGFloat x = left ? 0.0 : CGRectGetWidth(bounds) - touchSize.width;
-        CGFloat y = top ? 0.0 : CGRectGetHeight(bounds) - touchSize.height;
-        triggerView.frame = CGRectMake(x, y, touchSize.width, touchSize.height);
+        CGFloat diameter = settings.handleTouchRadius * 2.0;
+        CGFloat maxX = MAX(0.0, CGRectGetWidth(bounds) - diameter);
+        CGFloat maxY = MAX(0.0, CGRectGetHeight(bounds) - diameter);
+        CGFloat x = left ? settings.fixedTriggerHorizontalInset : CGRectGetWidth(bounds) - settings.fixedTriggerHorizontalInset - diameter;
+        CGFloat y = top ? settings.fixedTriggerVerticalInset : CGRectGetHeight(bounds) - settings.fixedTriggerVerticalInset - diameter;
+        x = MIN(MAX(x, 0.0), maxX);
+        y = MIN(MAX(y, 0.0), maxY);
+        triggerView.frame = CGRectMake(x, y, diameter, diameter);
+        triggerView.layer.cornerRadius = diameter / 2.0;
+        triggerView.clipsToBounds = YES;
         UIView *areaView = self.fixedTriggerTouchAreaViews[cornerValue];
         areaView.frame = triggerView.bounds;
-        areaView.layer.cornerRadius = MIN(touchSize.width, touchSize.height) / 2.0;
+        areaView.layer.cornerRadius = diameter / 2.0;
+        areaView.clipsToBounds = YES;
         BOOL selected = (settings.fixedTriggerCorners & corner) != 0;
         triggerView.hidden = self.screenLocked || landscapeDisabled || settings.menuTriggerMode != KSBallMenuTriggerModeFixedCorners || !selected;
     }

@@ -33,11 +33,13 @@ typedef NS_ENUM(NSInteger, KSBallTriggerRow) {
     KSBallTriggerRowMode = 0,
     KSBallTriggerRowAreaSize = 1,
     KSBallTriggerRowLandscape = 2,
-    KSBallTriggerRowTopLeft = 3,
-    KSBallTriggerRowTopRight = 4,
-    KSBallTriggerRowBottomLeft = 5,
-    KSBallTriggerRowBottomRight = 6,
-    KSBallTriggerRowCount = 7,
+    KSBallTriggerRowHorizontalInset = 3,
+    KSBallTriggerRowVerticalInset = 4,
+    KSBallTriggerRowTopLeft = 5,
+    KSBallTriggerRowTopRight = 6,
+    KSBallTriggerRowBottomLeft = 7,
+    KSBallTriggerRowBottomRight = 8,
+    KSBallTriggerRowCount = 9,
 };
 
 typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
@@ -142,7 +144,7 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
         case KSBallConfigurationSectionHUD:
             return @"悬浮条位于屏幕边缘内侧。从悬浮条向内滑动展开扇形菜单，滑到图标上会显示名称并震动，松手即启动；在空白处松手则取消。长按不移动回到此设置页，长按后拖动可调整位置。锁屏界面会自动隐藏悬浮条。";
         case KSBallConfigurationSectionTrigger:
-            return @"把手模式沿用当前可拖动悬浮条。固定位置模式可同时启用多个屏幕角落；触发区域大小会应用到把手和所有已选角落。关闭横屏触发后，横屏时不会拦截游戏触摸。";
+            return @"把手模式沿用当前可拖动悬浮条，热区为矩形。固定位置模式可同时启用多个屏幕角落，热区为圆形；水平和垂直内缩会统一应用到所有已选角落。关闭横屏触发后，横屏时不会拦截游戏触摸。";
         case KSBallConfigurationSectionAppearance:
             return @"“自动”跟随系统的浅色/深色模式。悬浮条设为隐藏后，边缘的触摸区域仍然有效。模糊程度控制毛玻璃的模糊强度，调整时会实时预览。";
         case KSBallConfigurationSectionLayout:
@@ -236,7 +238,7 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
         }
         slider.value = settings.handleTouchRadius;
         cell.textLabel.text = @"触发区域大小";
-        cell.detailTextLabel.text = [self touchRadiusText:settings.handleTouchRadius];
+        cell.detailTextLabel.text = [self triggerAreaSizeText:settings.handleTouchRadius fixed:settings.menuTriggerMode == KSBallMenuTriggerModeFixedCorners];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
         return cell;
     }
@@ -251,6 +253,27 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
         }
         toggle.on = settings.landscapeTriggerEnabled;
         cell.textLabel.text = @"横屏允许触发";
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        return cell;
+    }
+
+    if (row == KSBallTriggerRowHorizontalInset || row == KSBallTriggerRowVerticalInset) {
+        BOOL horizontal = row == KSBallTriggerRowHorizontalInset;
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"TriggerInsetCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"TriggerInsetCell"];
+        UISlider *slider = [cell.accessoryView isKindOfClass:UISlider.class] ? (UISlider *)cell.accessoryView : nil;
+        if (!slider) {
+            slider = [[UISlider alloc] initWithFrame:CGRectMake(0.0, 0.0, 150.0, 32.0)];
+            slider.minimumValue = 0.0;
+            slider.maximumValue = KSBallMaximumFixedTriggerInset;
+            slider.tag = row;
+            [slider addTarget:self action:@selector(fixedTriggerInsetChanged:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = slider;
+        }
+        CGFloat inset = horizontal ? settings.fixedTriggerHorizontalInset : settings.fixedTriggerVerticalInset;
+        slider.tag = row;
+        slider.value = inset;
+        cell.textLabel.text = horizontal ? @"水平内缩" : @"垂直内缩";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f pt", inset];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
         return cell;
     }
@@ -324,11 +347,14 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
     return index == 0 ? KSBallHandleStyleAutomatic : index - 1;
 }
 
-- (NSString *)touchRadiusText:(CGFloat)radius {
-    // 把手与固定角落共用同一触发区域尺寸。
+- (NSString *)triggerAreaSizeText:(CGFloat)radius fixed:(BOOL)fixed {
+    if (fixed) {
+        CGFloat diameter = radius * 2.0;
+        return [NSString stringWithFormat:@"半径 %.0f pt · 圆形区域 %.0f × %.0f pt", radius, diameter, diameter];
+    }
     CGFloat width = KSBallHandleEdgeInset + KSBallHandleBarWidth / 2.0 + radius;
     CGFloat height = KSBallHandleBarHeight + radius * 2.0;
-    return [NSString stringWithFormat:@"%.0f pt · 区域 %.0f × %.0f pt", radius, width, height];
+    return [NSString stringWithFormat:@"%.0f pt · 矩形区域 %.0f × %.0f pt", radius, width, height];
 }
 
 - (UITableViewCell *)layoutCellForRow:(NSInteger)row {
@@ -573,7 +599,7 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
     CGFloat value = round(sender.value);
     NSIndexPath *indexPath = [NSIndexPath indexPathForRow:KSBallTriggerRowAreaSize inSection:KSBallConfigurationSectionTrigger];
     UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
-    cell.detailTextLabel.text = [self touchRadiusText:value];
+    cell.detailTextLabel.text = [self triggerAreaSizeText:value fixed:self.settingsStore.settings.menuTriggerMode == KSBallMenuTriggerModeFixedCorners];
 
     if (fabs(self.settingsStore.settings.handleTouchRadius - value) < 0.001) {
         return;
@@ -581,6 +607,27 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
     self.adjustingSlider = sender.isTracking;
     [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
         settings.handleTouchRadius = value;
+    }];
+    self.adjustingSlider = NO;
+}
+
+- (void)fixedTriggerInsetChanged:(UISlider *)sender {
+    CGFloat value = round(sender.value);
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:sender.tag inSection:KSBallConfigurationSectionTrigger];
+    UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+    cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f pt", value];
+    BOOL horizontal = sender.tag == KSBallTriggerRowHorizontalInset;
+    CGFloat current = horizontal ? self.settingsStore.settings.fixedTriggerHorizontalInset : self.settingsStore.settings.fixedTriggerVerticalInset;
+    if (fabs(current - value) < 0.001) {
+        return;
+    }
+    self.adjustingSlider = sender.isTracking;
+    [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
+        if (horizontal) {
+            settings.fixedTriggerHorizontalInset = value;
+        } else {
+            settings.fixedTriggerVerticalInset = value;
+        }
     }];
     self.adjustingSlider = NO;
 }
