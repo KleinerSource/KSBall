@@ -27,6 +27,19 @@ typedef NS_ENUM(NSInteger, KSBallEdge) {
     KSBallEdgeRight = 1,
 };
 
+typedef NS_ENUM(NSInteger, KSBallMenuTriggerMode) {
+    KSBallMenuTriggerModeHandle = 0,
+    KSBallMenuTriggerModeFixedCorners = 1,
+};
+
+typedef NS_OPTIONS(NSUInteger, KSBallFixedTriggerCorner) {
+    KSBallFixedTriggerCornerTopLeft = 1 << 0,
+    KSBallFixedTriggerCornerTopRight = 1 << 1,
+    KSBallFixedTriggerCornerBottomLeft = 1 << 2,
+    KSBallFixedTriggerCornerBottomRight = 1 << 3,
+    KSBallFixedTriggerCornerAll = (1 << 4) - 1,
+};
+
 // 数值与已保存的设置兼容，新增的“自动”放在末尾。
 typedef NS_ENUM(NSInteger, KSBallHandleStyle) {
     KSBallHandleStyleLight = 0,
@@ -66,6 +79,9 @@ typedef NS_ENUM(NSInteger, KSBallBackdropStyle) {
 @property (nonatomic) BOOL floatingSplitEnabled;
 /// 在扇形菜单中悬停选中应用后，达到该时长再松手则以悬浮窗打开。
 @property (nonatomic) CGFloat floatingWindowDwellDuration;
+@property (nonatomic) KSBallMenuTriggerMode menuTriggerMode;
+@property (nonatomic) KSBallFixedTriggerCorner fixedTriggerCorners;
+@property (nonatomic) BOOL landscapeTriggerEnabled;
 @property (nonatomic) KSBallEdge edge;
 @property (nonatomic) CGFloat normalizedVerticalPosition;
 @property (nonatomic) CGFloat iconSize;

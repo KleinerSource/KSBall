@@ -50,6 +50,8 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 @property (nonatomic, strong) UIView *touchAreaView;
 @property (nonatomic, strong) UIView *barView;
 @property (nonatomic, strong) UIPanGestureRecognizer *panRecognizer;
+@property (nonatomic, strong) NSMutableDictionary<NSNumber *, UIView *> *fixedTriggerViews;
+@property (nonatomic, strong) NSMutableDictionary<NSNumber *, UIView *> *fixedTriggerTouchAreaViews;
 @property (nonatomic, strong) UIVisualEffectView *backdropView;
 // 暂停在指定进度的属性动画器，用来控制毛玻璃的模糊程度。
 @property (nonatomic, strong, nullable) UIViewPropertyAnimator *backdropAnimator;
@@ -75,7 +77,11 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 @property (nonatomic) BOOL hasAppliedSettings;
 @property (nonatomic, copy) NSString *appliedMenuLayoutSignature;
 @property (nonatomic, copy) NSString *appliedBackdropSignature;
+@property (nonatomic, copy) NSString *appliedTriggerSignature;
 @property (nonatomic) CGFloat appliedHandleTouchRadius;
+@property (nonatomic) CGPoint activeMenuAnchor;
+@property (nonatomic) KSBallEdge activeMenuEdge;
+@property (nonatomic) BOOL hasActiveMenuAnchor;
 @property (nonatomic) BOOL dragging;
 @property (nonatomic) BOOL dragMoved;
 @property (nonatomic) CGPoint dragStartLocation;
@@ -96,8 +102,11 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
         _menuItemViews = [NSMutableArray array];
         _menuShortcuts = @[];
         _iconsByBundleIdentifier = [NSMutableDictionary dictionary];
+        _fixedTriggerViews = [NSMutableDictionary dictionary];
+        _fixedTriggerTouchAreaViews = [NSMutableDictionary dictionary];
         _appliedMenuLayoutSignature = @"";
         _appliedBackdropSignature = @"";
+        _appliedTriggerSignature = @"";
         _lockStateToken = NOTIFY_TOKEN_INVALID;
     }
     return self;
@@ -252,18 +261,24 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     NSString *shortcutIdentifiers = [sortedIdentifiers componentsJoinedByString:@","];
     NSString *menuLayoutSignature = [NSString stringWithFormat:@"%.2f|%.2f|%.2f|%@", settings.iconSize, settings.iconSpacing, settings.ringSpacing, shortcutIdentifiers];
     NSString *backdropSignature = [NSString stringWithFormat:@"%ld|%.2f", (long)settings.backdropStyle, settings.backdropBlur];
+    NSString *triggerSignature = [NSString stringWithFormat:@"%ld|%lu|%d", (long)settings.menuTriggerMode, (unsigned long)settings.fixedTriggerCorners, settings.landscapeTriggerEnabled];
     BOOL menuLayoutChanged = self.hasAppliedSettings && ![menuLayoutSignature isEqualToString:self.appliedMenuLayoutSignature];
     BOOL backdropChanged = self.hasAppliedSettings && ![backdropSignature isEqualToString:self.appliedBackdropSignature];
+    BOOL triggerChanged = self.hasAppliedSettings && ![triggerSignature isEqualToString:self.appliedTriggerSignature];
     BOOL touchRadiusChanged = self.hasAppliedSettings && fabs(settings.handleTouchRadius - self.appliedHandleTouchRadius) > 0.01;
     self.hasAppliedSettings = YES;
     self.appliedMenuLayoutSignature = menuLayoutSignature;
     self.appliedBackdropSignature = backdropSignature;
+    self.appliedTriggerSignature = triggerSignature;
     self.appliedHandleTouchRadius = settings.handleTouchRadius;
 
     [self reloadIcons];
     // 用户正在滑动选择时不打断当前菜单。
-    if (self.menuVisible && !self.previewingMenu) {
+    if (self.menuVisible && !self.previewingMenu && !triggerChanged) {
         return;
+    }
+    if (triggerChanged && self.menuVisible) {
+        [self dismissMenuAnimated:NO];
     }
     [self layoutHandle];
     if (touchRadiusChanged && !self.screenLocked) {
@@ -294,9 +309,13 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     }
     if (screenLocked) {
         // 切换 enabled 会取消进行中的滑动或拖动。
-        for (UIGestureRecognizer *recognizer in self.handleView.gestureRecognizers) {
-            recognizer.enabled = NO;
-            recognizer.enabled = YES;
+        NSMutableArray<UIView *> *triggerViews = [NSMutableArray arrayWithObject:self.handleView];
+        [triggerViews addObjectsFromArray:self.fixedTriggerViews.allValues];
+        for (UIView *view in triggerViews) {
+            for (UIGestureRecognizer *recognizer in view.gestureRecognizers) {
+                recognizer.enabled = NO;
+                recognizer.enabled = YES;
+            }
         }
         self.dragging = NO;
         self.dragMoved = NO;
@@ -351,7 +370,64 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     self.touchAreaView.frame = self.handleView.bounds;
     self.touchAreaView.layer.cornerRadius = MIN(touchSize.width, touchSize.height) / 2.0;
     [self layoutBar];
+    [self layoutFixedTriggersWithTouchSize:touchSize];
+    BOOL landscapeDisabled = CGRectGetWidth(self.view.bounds) > CGRectGetHeight(self.view.bounds) && !self.settingsStore.settings.landscapeTriggerEnabled;
+    BOOL triggersDisabled = self.screenLocked || landscapeDisabled;
+    self.handleView.hidden = triggersDisabled || self.settingsStore.settings.menuTriggerMode != KSBallMenuTriggerModeHandle;
+    if (triggersDisabled && self.menuVisible) {
+        [self dismissMenuAnimated:NO];
+    }
     [self refreshHitTargets];
+}
+
+- (void)layoutFixedTriggersWithTouchSize:(CGSize)touchSize {
+    NSArray<NSNumber *> *corners = @[@(KSBallFixedTriggerCornerTopLeft), @(KSBallFixedTriggerCornerTopRight), @(KSBallFixedTriggerCornerBottomLeft), @(KSBallFixedTriggerCornerBottomRight)];
+    CGRect bounds = self.view.bounds;
+    KSBallSettings *settings = self.settingsStore.settings;
+    BOOL landscapeDisabled = CGRectGetWidth(bounds) > CGRectGetHeight(bounds) && !settings.landscapeTriggerEnabled;
+    for (NSNumber *cornerValue in corners) {
+        KSBallFixedTriggerCorner corner = cornerValue.unsignedIntegerValue;
+        UIView *triggerView = self.fixedTriggerViews[cornerValue];
+        if (!triggerView) {
+            triggerView = [[UIView alloc] initWithFrame:CGRectZero];
+            triggerView.tag = corner;
+            triggerView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.012];
+            triggerView.isAccessibilityElement = YES;
+            triggerView.accessibilityLabel = @"KSBall 固定菜单触发区域";
+            KSBallSetLayerHitTestsAsOpaque(triggerView.layer, YES);
+            [self.view addSubview:triggerView];
+
+            UIView *touchAreaView = [UIView new];
+            touchAreaView.userInteractionEnabled = NO;
+            touchAreaView.backgroundColor = [UIColor.systemBlueColor colorWithAlphaComponent:0.22];
+            touchAreaView.layer.borderColor = [UIColor.systemBlueColor colorWithAlphaComponent:0.8].CGColor;
+            touchAreaView.layer.borderWidth = 1.0;
+            touchAreaView.alpha = 0.0;
+            [triggerView addSubview:touchAreaView];
+            self.fixedTriggerTouchAreaViews[cornerValue] = touchAreaView;
+
+            UIPanGestureRecognizer *panRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
+            panRecognizer.maximumNumberOfTouches = 1;
+            panRecognizer.delegate = self;
+            [triggerView addGestureRecognizer:panRecognizer];
+            UILongPressGestureRecognizer *longPressRecognizer = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
+            longPressRecognizer.minimumPressDuration = 0.45;
+            longPressRecognizer.allowableMovement = 10.0;
+            [triggerView addGestureRecognizer:longPressRecognizer];
+            self.fixedTriggerViews[cornerValue] = triggerView;
+        }
+
+        BOOL left = corner == KSBallFixedTriggerCornerTopLeft || corner == KSBallFixedTriggerCornerBottomLeft;
+        BOOL top = corner == KSBallFixedTriggerCornerTopLeft || corner == KSBallFixedTriggerCornerTopRight;
+        CGFloat x = left ? 0.0 : CGRectGetWidth(bounds) - touchSize.width;
+        CGFloat y = top ? 0.0 : CGRectGetHeight(bounds) - touchSize.height;
+        triggerView.frame = CGRectMake(x, y, touchSize.width, touchSize.height);
+        UIView *areaView = self.fixedTriggerTouchAreaViews[cornerValue];
+        areaView.frame = triggerView.bounds;
+        areaView.layer.cornerRadius = MIN(touchSize.width, touchSize.height) / 2.0;
+        BOOL selected = (settings.fixedTriggerCorners & corner) != 0;
+        triggerView.hidden = self.screenLocked || landscapeDisabled || settings.menuTriggerMode != KSBallMenuTriggerModeFixedCorners || !selected;
+    }
 }
 
 // 触摸热区从屏幕边缘开始，横向延伸到可见条中心外 radius 处，纵向在可见条上下各延伸 radius。
@@ -405,6 +481,10 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(hideTouchArea) object:nil];
     [UIView animateWithDuration:0.12 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
         self.touchAreaView.alpha = 1.0;
+        for (NSNumber *corner in self.fixedTriggerTouchAreaViews) {
+            UIView *areaView = self.fixedTriggerTouchAreaViews[corner];
+            areaView.alpha = self.fixedTriggerViews[corner].hidden ? 0.0 : 1.0;
+        }
     } completion:nil];
     [self performSelector:@selector(hideTouchArea) withObject:nil afterDelay:KSBallMenuPreviewDuration];
 }
@@ -412,11 +492,56 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 - (void)hideTouchArea {
     [UIView animateWithDuration:0.25 delay:0.0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
         self.touchAreaView.alpha = 0.0;
+        for (UIView *areaView in self.fixedTriggerTouchAreaViews.allValues) {
+            areaView.alpha = 0.0;
+        }
     } completion:nil];
 }
 
 - (CGPoint)barCenter {
     return [self.handleView convertPoint:self.barView.center toView:self.view];
+}
+
+- (CGPoint)currentMenuAnchor {
+    if (self.hasActiveMenuAnchor) {
+        return self.activeMenuAnchor;
+    }
+    if (self.settingsStore.settings.menuTriggerMode == KSBallMenuTriggerModeFixedCorners) {
+        NSArray<NSNumber *> *corners = @[@(KSBallFixedTriggerCornerTopLeft), @(KSBallFixedTriggerCornerTopRight), @(KSBallFixedTriggerCornerBottomLeft), @(KSBallFixedTriggerCornerBottomRight)];
+        for (NSNumber *corner in corners) {
+            if ((self.settingsStore.settings.fixedTriggerCorners & corner.unsignedIntegerValue) != 0 && self.fixedTriggerViews[corner]) {
+                return self.fixedTriggerViews[corner].center;
+            }
+        }
+    }
+    return [self barCenter];
+}
+
+- (KSBallEdge)currentMenuEdge {
+    if (self.hasActiveMenuAnchor) {
+        return self.activeMenuEdge;
+    }
+    if (self.settingsStore.settings.menuTriggerMode == KSBallMenuTriggerModeFixedCorners) {
+        NSArray<NSNumber *> *corners = @[@(KSBallFixedTriggerCornerTopLeft), @(KSBallFixedTriggerCornerTopRight), @(KSBallFixedTriggerCornerBottomLeft), @(KSBallFixedTriggerCornerBottomRight)];
+        for (NSNumber *corner in corners) {
+            if ((self.settingsStore.settings.fixedTriggerCorners & corner.unsignedIntegerValue) != 0) {
+                return corner.unsignedIntegerValue == KSBallFixedTriggerCornerTopLeft || corner.unsignedIntegerValue == KSBallFixedTriggerCornerBottomLeft ? KSBallEdgeLeft : KSBallEdgeRight;
+            }
+        }
+    }
+    return [self currentEdge];
+}
+
+- (void)prepareMenuAnchorForTriggerView:(UIView *)triggerView {
+    if (triggerView == self.handleView) {
+        self.activeMenuAnchor = [self barCenter];
+        self.activeMenuEdge = [self currentEdge];
+    } else {
+        KSBallFixedTriggerCorner corner = triggerView.tag;
+        self.activeMenuAnchor = triggerView.center;
+        self.activeMenuEdge = corner == KSBallFixedTriggerCornerTopLeft || corner == KSBallFixedTriggerCornerBottomLeft ? KSBallEdgeLeft : KSBallEdgeRight;
+    }
+    self.hasActiveMenuAnchor = YES;
 }
 
 - (CGRect)menuSafeBounds {
@@ -468,8 +593,8 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 
     KSBallSettings *settings = self.settingsStore.settings;
     CGFloat scale = 1.0;
-    CGPoint anchor = [self barCenter];
-    NSArray<NSValue *> *centers = [KSBallFanLayout centersForItemCount:shortcuts.count anchorCenter:anchor safeBounds:[self menuSafeBounds] edge:[self currentEdge] itemSize:settings.iconSize itemSpacing:settings.iconSpacing ringSpacing:settings.ringSpacing scale:&scale];
+    CGPoint anchor = [self currentMenuAnchor];
+    NSArray<NSValue *> *centers = [KSBallFanLayout centersForItemCount:shortcuts.count anchorCenter:anchor safeBounds:[self menuSafeBounds] edge:[self currentMenuEdge] itemSize:settings.iconSize itemSpacing:settings.iconSpacing ringSpacing:settings.ringSpacing scale:&scale];
     self.menuItemSize = settings.iconSize * scale;
     // 命中范围覆盖到最近两个图标间隙的一半，滑动时不会出现“空档”。
     self.menuHoverRadius = (settings.iconSize + MIN(settings.iconSpacing, settings.ringSpacing)) * scale / 2.0 + 2.0;
@@ -596,6 +721,8 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     [self cancelFloatingModeTimer];
     self.previewingMenu = NO;
     [self updateHoveredItemView:nil];
+    CGPoint anchor = [self currentMenuAnchor];
+    self.hasActiveMenuAnchor = NO;
     if (!self.menuVisible && self.menuItemViews.count == 0) {
         return;
     }
@@ -603,7 +730,6 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     NSArray<UIView *> *itemViews = [self.menuItemViews copy];
     [self.menuItemViews removeAllObjects];
     self.menuShortcuts = @[];
-    CGPoint anchor = [self barCenter];
     void (^changes)(void) = ^{
         for (UIView *itemView in itemViews) {
             itemView.alpha = 0.0;
@@ -820,6 +946,7 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
     CGPoint location = [recognizer locationInView:self.view];
     switch (recognizer.state) {
         case UIGestureRecognizerStateBegan:
+            [self prepareMenuAnchorForTriggerView:recognizer.view];
             if ([self showMenu]) {
                 [self updateHoveredItemView:[self menuItemViewNearPoint:location]];
             }
@@ -856,6 +983,14 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 
 // 长按不动进入设置页；长按后拖动可沿边缘移动悬浮条，越过屏幕中线会换到另一侧。
 - (void)handleLongPress:(UILongPressGestureRecognizer *)recognizer {
+    if (self.settingsStore.settings.menuTriggerMode == KSBallMenuTriggerModeFixedCorners) {
+        if (recognizer.state == UIGestureRecognizerStateBegan) {
+            [self dismissMenuAnimated:YES];
+        } else if (recognizer.state == UIGestureRecognizerStateEnded && self.openConfigurationHandler) {
+            self.openConfigurationHandler();
+        }
+        return;
+    }
     CGPoint location = [recognizer locationInView:self.view];
     switch (recognizer.state) {
         case UIGestureRecognizerStateBegan: {
@@ -920,7 +1055,7 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 }
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer {
-    if (gestureRecognizer == self.panRecognizer) {
+    if ([gestureRecognizer isKindOfClass:UIPanGestureRecognizer.class]) {
         return !self.dragging;
     }
     return YES;
@@ -943,10 +1078,19 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 }
 
 - (void)refreshHitTargets {
-    // 菜单图标不参与命中测试：整个选择过程都由悬浮条上的同一次滑动手势完成。
+    // 菜单图标不参与命中测试：整个选择过程由触发区上的同一次滑动手势完成。
+    NSMutableArray<UIView *> *interactiveViews = [NSMutableArray array];
+    if (!self.handleView.hidden) {
+        [interactiveViews addObject:self.handleView];
+    }
+    for (UIView *triggerView in self.fixedTriggerViews.allValues) {
+        if (!triggerView.hidden) {
+            [interactiveViews addObject:triggerView];
+        }
+    }
     // 悬浮窗的外框与收纳区需要接收触摸；窗口移动时按实时 frame 判断，无需逐帧刷新。
-    NSArray<UIView *> *floatingViews = self.floatingWindowManager.interactiveViews ?: @[];
-    ((KSBallHUDCanvasView *)self.view).interactiveViews = [@[self.handleView] arrayByAddingObjectsFromArray:floatingViews];
+    [interactiveViews addObjectsFromArray:self.floatingWindowManager.interactiveViews ?: @[]];
+    ((KSBallHUDCanvasView *)self.view).interactiveViews = interactiveViews;
 }
 
 @end

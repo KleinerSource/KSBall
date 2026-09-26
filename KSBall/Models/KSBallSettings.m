@@ -76,6 +76,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     KSBallSettings *settings = [self new];
     settings.enabled = YES;
     settings.floatingSplitEnabled = YES;
+    settings.menuTriggerMode = KSBallMenuTriggerModeHandle;
+    settings.fixedTriggerCorners = KSBallFixedTriggerCornerBottomRight;
+    settings.landscapeTriggerEnabled = YES;
     settings.edge = KSBallEdgeRight;
     settings.normalizedVerticalPosition = 0.5;
     settings.shortcuts = [NSMutableArray array];
@@ -103,6 +106,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     copy.enabled = self.enabled;
     copy.floatingSplitEnabled = self.floatingSplitEnabled;
     copy.floatingWindowDwellDuration = self.floatingWindowDwellDuration;
+    copy.menuTriggerMode = self.menuTriggerMode;
+    copy.fixedTriggerCorners = self.fixedTriggerCorners;
+    copy.landscapeTriggerEnabled = self.landscapeTriggerEnabled;
     copy.edge = self.edge;
     copy.normalizedVerticalPosition = self.normalizedVerticalPosition;
     copy.iconSize = self.iconSize;
@@ -120,6 +126,13 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 
 - (void)normalize {
     self.floatingWindowDwellDuration = isfinite(self.floatingWindowDwellDuration) ? MIN(MAX(round(self.floatingWindowDwellDuration), KSBallMinimumFloatingWindowDwellDuration), KSBallMaximumFloatingWindowDwellDuration) : KSBallDefaultFloatingWindowDwellDuration;
+    if (self.menuTriggerMode != KSBallMenuTriggerModeHandle && self.menuTriggerMode != KSBallMenuTriggerModeFixedCorners) {
+        self.menuTriggerMode = KSBallMenuTriggerModeHandle;
+    }
+    self.fixedTriggerCorners &= KSBallFixedTriggerCornerAll;
+    if (self.fixedTriggerCorners == 0) {
+        self.fixedTriggerCorners = KSBallFixedTriggerCornerBottomRight;
+    }
     self.normalizedVerticalPosition = MIN(MAX(self.normalizedVerticalPosition, 0.0), 1.0);
     self.edge = self.edge == KSBallEdgeLeft ? KSBallEdgeLeft : KSBallEdgeRight;
     self.iconSize = isfinite(self.iconSize) ? MIN(MAX(self.iconSize, KSBallMinimumIconSize), KSBallMaximumIconSize) : KSBallDefaultIconSize;
@@ -173,6 +186,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         @"enabled": @(self.enabled),
         @"floatingSplitEnabled": @(self.floatingSplitEnabled),
         @"floatingWindowDwellDuration": @(self.floatingWindowDwellDuration),
+        @"menuTriggerMode": @(self.menuTriggerMode),
+        @"fixedTriggerCorners": @(self.fixedTriggerCorners),
+        @"landscapeTriggerEnabled": @(self.landscapeTriggerEnabled),
         @"edge": @(self.edge),
         @"normalizedVerticalPosition": @(self.normalizedVerticalPosition),
         @"iconSize": @(self.iconSize),
@@ -198,6 +214,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     NSNumber *enabled = number(@"enabled");
     NSNumber *floatingSplitEnabled = number(@"floatingSplitEnabled");
     NSNumber *floatingWindowDwellDuration = number(@"floatingWindowDwellDuration");
+    NSNumber *menuTriggerMode = number(@"menuTriggerMode");
+    NSNumber *fixedTriggerCorners = number(@"fixedTriggerCorners");
+    NSNumber *landscapeTriggerEnabled = number(@"landscapeTriggerEnabled");
     NSNumber *edge = number(@"edge");
     NSNumber *verticalPosition = number(@"normalizedVerticalPosition");
     NSNumber *iconSize = number(@"iconSize");
@@ -211,6 +230,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     if (enabled) settings.enabled = enabled.boolValue;
     if (floatingSplitEnabled) settings.floatingSplitEnabled = floatingSplitEnabled.boolValue;
     if (floatingWindowDwellDuration) settings.floatingWindowDwellDuration = floatingWindowDwellDuration.doubleValue;
+    if (menuTriggerMode) settings.menuTriggerMode = menuTriggerMode.integerValue;
+    if (fixedTriggerCorners) settings.fixedTriggerCorners = fixedTriggerCorners.unsignedIntegerValue;
+    if (landscapeTriggerEnabled) settings.landscapeTriggerEnabled = landscapeTriggerEnabled.boolValue;
     if (edge) settings.edge = edge.integerValue;
     if (verticalPosition) settings.normalizedVerticalPosition = verticalPosition.doubleValue;
     if (iconSize) settings.iconSize = iconSize.doubleValue;

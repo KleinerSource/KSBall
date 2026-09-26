@@ -1,6 +1,7 @@
 #import "ConfigurationViewController.h"
 #import "AppPickerViewController.h"
 #import "HUDSceneCoordinator.h"
+#import "KSBallFanLayout.h"
 #import "KSBallSettingsStore.h"
 #import "KSBallUpdateChecker.h"
 #import "ShortcutArrangementViewController.h"
@@ -12,21 +13,32 @@ static const NSUInteger KSBallUpdateNotesDisplayLimit = 1000;
 
 typedef NS_ENUM(NSInteger, KSBallConfigurationSection) {
     KSBallConfigurationSectionHUD = 0,
-    KSBallConfigurationSectionAppearance = 1,
-    KSBallConfigurationSectionLayout = 2,
-    KSBallConfigurationSectionFloatingSplit = 3,
-    KSBallConfigurationSectionShortcuts = 4,
-    KSBallConfigurationSectionSupport = 5,
-    KSBallConfigurationSectionUpdate = 6,
-    KSBallConfigurationSectionCount = 7,
+    KSBallConfigurationSectionTrigger = 1,
+    KSBallConfigurationSectionAppearance = 2,
+    KSBallConfigurationSectionLayout = 3,
+    KSBallConfigurationSectionFloatingSplit = 4,
+    KSBallConfigurationSectionShortcuts = 5,
+    KSBallConfigurationSectionSupport = 6,
+    KSBallConfigurationSectionUpdate = 7,
+    KSBallConfigurationSectionCount = 8,
 };
 
 typedef NS_ENUM(NSInteger, KSBallAppearanceRow) {
     KSBallAppearanceRowHandleStyle = 0,
-    KSBallAppearanceRowHandleTouchRadius = 1,
-    KSBallAppearanceRowBackdropStyle = 2,
-    KSBallAppearanceRowBackdropBlur = 3,
-    KSBallAppearanceRowCount = 4,
+    KSBallAppearanceRowBackdropStyle = 1,
+    KSBallAppearanceRowBackdropBlur = 2,
+    KSBallAppearanceRowCount = 3,
+};
+
+typedef NS_ENUM(NSInteger, KSBallTriggerRow) {
+    KSBallTriggerRowMode = 0,
+    KSBallTriggerRowAreaSize = 1,
+    KSBallTriggerRowLandscape = 2,
+    KSBallTriggerRowTopLeft = 3,
+    KSBallTriggerRowTopRight = 4,
+    KSBallTriggerRowBottomLeft = 5,
+    KSBallTriggerRowBottomRight = 6,
+    KSBallTriggerRowCount = 7,
 };
 
 typedef NS_ENUM(NSInteger, KSBallLayoutRow) {
@@ -115,6 +127,8 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     switch (section) {
         case KSBallConfigurationSectionHUD: return 1;
+        case KSBallConfigurationSectionTrigger:
+            return self.settingsStore.settings.menuTriggerMode == KSBallMenuTriggerModeFixedCorners ? KSBallTriggerRowCount : KSBallTriggerRowLandscape + 1;
         case KSBallConfigurationSectionAppearance: return KSBallAppearanceRowCount;
         case KSBallConfigurationSectionLayout: return KSBallLayoutRowCount;
         case KSBallConfigurationSectionFloatingSplit: return KSBallFloatingSplitRowCount;
@@ -128,6 +142,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     switch (section) {
         case KSBallConfigurationSectionHUD: return @"悬浮条";
+        case KSBallConfigurationSectionTrigger: return @"菜单启动";
         case KSBallConfigurationSectionAppearance: return @"外观";
         case KSBallConfigurationSectionLayout: return @"菜单布局";
         case KSBallConfigurationSectionFloatingSplit: return @"悬浮分屏";
@@ -142,8 +157,10 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     switch (section) {
         case KSBallConfigurationSectionHUD:
             return @"悬浮条位于屏幕边缘内侧。从悬浮条向内滑动展开扇形菜单，滑到图标上会显示名称并震动；停留后松手可按悬浮分屏等待时间选择悬浮窗打开，在空白处松手则取消。长按不移动回到此设置页，长按后拖动可调整位置。锁屏界面会自动隐藏悬浮条。";
+        case KSBallConfigurationSectionTrigger:
+            return @"把手模式沿用当前可拖动悬浮条。固定位置模式可同时启用多个屏幕角落；触发区域大小会应用到把手和所有已选角落。关闭横屏触发后，横屏时不会拦截游戏触摸。";
         case KSBallConfigurationSectionAppearance:
-            return @"“自动”跟随系统的浅色/深色模式。悬浮条设为隐藏后，边缘的触摸区域仍然有效；调整触摸半径时悬浮条旁会显示触摸区域。模糊程度控制毛玻璃的模糊强度，调整时会实时预览。";
+            return @"“自动”跟随系统的浅色/深色模式。悬浮条设为隐藏后，边缘的触摸区域仍然有效。模糊程度控制毛玻璃的模糊强度，调整时会实时预览。";
         case KSBallConfigurationSectionLayout:
             return @"扇形菜单围绕悬浮条逐圈展开，每圈按屏幕可显示的范围和间距放下尽可能多的图标。同圈间距控制一圈内相邻图标的距离，圈间距控制两圈之间的距离。空间不足时会等比缩小图标。";
         case KSBallConfigurationSectionFloatingSplit:
@@ -168,6 +185,8 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     switch (indexPath.section) {
         case KSBallConfigurationSectionHUD:
             return [self enabledCell];
+        case KSBallConfigurationSectionTrigger:
+            return [self triggerCellForRow:indexPath.row];
         case KSBallConfigurationSectionAppearance:
             return [self appearanceCellForRow:indexPath.row];
         case KSBallConfigurationSectionLayout:
@@ -199,27 +218,92 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     return cell;
 }
 
-- (UITableViewCell *)appearanceCellForRow:(NSInteger)row {
+- (KSBallFixedTriggerCorner)fixedTriggerCornerForRow:(NSInteger)row {
+    switch (row) {
+        case KSBallTriggerRowTopLeft: return KSBallFixedTriggerCornerTopLeft;
+        case KSBallTriggerRowTopRight: return KSBallFixedTriggerCornerTopRight;
+        case KSBallTriggerRowBottomLeft: return KSBallFixedTriggerCornerBottomLeft;
+        default: return KSBallFixedTriggerCornerBottomRight;
+    }
+}
+
+- (UITableViewCell *)triggerCellForRow:(NSInteger)row {
     KSBallSettings *settings = self.settingsStore.settings;
-    if (row == KSBallAppearanceRowHandleTouchRadius || row == KSBallAppearanceRowBackdropBlur) {
-        BOOL radiusRow = row == KSBallAppearanceRowHandleTouchRadius;
-        NSString *identifier = radiusRow ? @"TouchRadiusCell" : @"BlurCell";
-        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:identifier] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier];
+    if (row == KSBallTriggerRowMode) {
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"TriggerModeCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"TriggerModeCell"];
+        UISegmentedControl *control = [cell.accessoryView isKindOfClass:UISegmentedControl.class] ? (UISegmentedControl *)cell.accessoryView : nil;
+        if (!control) {
+            control = [[UISegmentedControl alloc] initWithItems:@[@"把手", @"固定位置"]];
+            control.frame = CGRectMake(0.0, 0.0, 170.0, 32.0);
+            [control addTarget:self action:@selector(triggerModeChanged:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = control;
+        }
+        control.selectedSegmentIndex = settings.menuTriggerMode;
+        cell.textLabel.text = @"启动方式";
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        return cell;
+    }
+
+    if (row == KSBallTriggerRowAreaSize) {
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"TriggerAreaSizeCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"TriggerAreaSizeCell"];
         UISlider *slider = [cell.accessoryView isKindOfClass:UISlider.class] ? (UISlider *)cell.accessoryView : nil;
         if (!slider) {
             slider = [[UISlider alloc] initWithFrame:CGRectMake(0.0, 0.0, 150.0, 32.0)];
-            slider.minimumValue = radiusRow ? KSBallMinimumHandleTouchRadius : KSBallMinimumBackdropBlur;
-            slider.maximumValue = radiusRow ? KSBallMaximumHandleTouchRadius : 1.0;
+            slider.minimumValue = KSBallMinimumHandleTouchRadius;
+            slider.maximumValue = KSBallMaximumHandleTouchRadius;
+            [slider addTarget:self action:@selector(triggerAreaSizeChanged:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = slider;
+        }
+        slider.value = settings.handleTouchRadius;
+        cell.textLabel.text = @"触发区域大小";
+        cell.detailTextLabel.text = [self touchRadiusText:settings.handleTouchRadius];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        return cell;
+    }
+
+    if (row == KSBallTriggerRowLandscape) {
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"LandscapeTriggerCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"LandscapeTriggerCell"];
+        UISwitch *toggle = [cell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)cell.accessoryView : nil;
+        if (!toggle) {
+            toggle = [UISwitch new];
+            [toggle addTarget:self action:@selector(toggleLandscapeTrigger:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = toggle;
+        }
+        toggle.on = settings.landscapeTriggerEnabled;
+        cell.textLabel.text = @"横屏允许触发";
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        return cell;
+    }
+
+    NSArray<NSString *> *cornerTitles = @[@"左上", @"右上", @"左下", @"右下"];
+    NSInteger cornerIndex = row - KSBallTriggerRowTopLeft;
+    KSBallFixedTriggerCorner corner = [self fixedTriggerCornerForRow:row];
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"FixedTriggerCornerCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"FixedTriggerCornerCell"];
+    UISwitch *toggle = [cell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)cell.accessoryView : nil;
+    if (!toggle) {
+        toggle = [UISwitch new];
+        [toggle addTarget:self action:@selector(fixedTriggerCornerChanged:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = toggle;
+    }
+    toggle.tag = row;
+    toggle.on = (settings.fixedTriggerCorners & corner) != 0;
+    cell.textLabel.text = [NSString stringWithFormat:@"%@触发", cornerTitles[cornerIndex]];
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    return cell;
+}
+
+- (UITableViewCell *)appearanceCellForRow:(NSInteger)row {
+    KSBallSettings *settings = self.settingsStore.settings;
+    if (row == KSBallAppearanceRowBackdropBlur) {
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"BlurCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"BlurCell"];
+        UISlider *slider = [cell.accessoryView isKindOfClass:UISlider.class] ? (UISlider *)cell.accessoryView : nil;
+        if (!slider) {
+            slider = [[UISlider alloc] initWithFrame:CGRectMake(0.0, 0.0, 150.0, 32.0)];
+            slider.minimumValue = KSBallMinimumBackdropBlur;
+            slider.maximumValue = 1.0;
             slider.tag = row;
             [slider addTarget:self action:@selector(appearanceSliderChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = slider;
-        }
-        cell.selectionStyle = UITableViewCellSelectionStyleNone;
-        if (radiusRow) {
-            slider.value = settings.handleTouchRadius;
-            cell.textLabel.text = @"触摸半径";
-            cell.detailTextLabel.text = [self touchRadiusText:settings.handleTouchRadius];
-            return cell;
         }
         BOOL backdropEnabled = settings.backdropStyle != KSBallBackdropStyleNone;
         slider.value = settings.backdropBlur;
@@ -227,6 +311,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         cell.textLabel.text = @"模糊程度";
         cell.textLabel.enabled = backdropEnabled;
         cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", settings.backdropBlur * 100.0];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
         return cell;
     }
 
@@ -260,8 +345,10 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 }
 
 - (NSString *)touchRadiusText:(CGFloat)radius {
-    // 与悬浮条热区的计算保持一致：横向从屏幕边缘到可见条中心再加半径，纵向为可见条高度加上下两个半径。
-    return [NSString stringWithFormat:@"%.0f pt · 触摸区域 %.0f × %.0f pt", radius, 12.0 + radius, 36.0 + radius * 2.0];
+    // 把手与固定角落共用同一触发区域尺寸。
+    CGFloat width = KSBallHandleEdgeInset + KSBallHandleBarWidth / 2.0 + radius;
+    CGFloat height = KSBallHandleBarHeight + radius * 2.0;
+    return [NSString stringWithFormat:@"%.0f pt · 区域 %.0f × %.0f pt", radius, width, height];
 }
 
 - (UITableViewCell *)layoutCellForRow:(NSInteger)row {
@@ -501,6 +588,32 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     }];
 }
 
+- (void)triggerModeChanged:(UISegmentedControl *)sender {
+    [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
+        settings.menuTriggerMode = sender.selectedSegmentIndex == 1 ? KSBallMenuTriggerModeFixedCorners : KSBallMenuTriggerModeHandle;
+    }];
+}
+
+- (void)fixedTriggerCornerChanged:(UISwitch *)sender {
+    KSBallFixedTriggerCorner corner = [self fixedTriggerCornerForRow:sender.tag];
+    KSBallSettings *settings = self.settingsStore.settings;
+    KSBallFixedTriggerCorner corners = settings.fixedTriggerCorners;
+    corners = sender.isOn ? (corners | corner) : (corners & ~corner);
+    if (corners == 0) {
+        sender.on = YES;
+        return;
+    }
+    [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
+        settings.fixedTriggerCorners = corners;
+    }];
+}
+
+- (void)toggleLandscapeTrigger:(UISwitch *)sender {
+    [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
+        settings.landscapeTriggerEnabled = sender.isOn;
+    }];
+}
+
 - (void)appearanceStyleChanged:(UISegmentedControl *)sender {
     NSInteger style = [self styleForSegmentIndex:sender.selectedSegmentIndex];
     BOOL handleRow = sender.tag == KSBallAppearanceRowHandleStyle;
@@ -516,24 +629,35 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 // 拖动过程中实时写入设置，悬浮条会同步显示触摸范围或毛玻璃效果；
 // 只在数值跨过一个刻度时写入，避免每一帧都同步一次。
 - (void)appearanceSliderChanged:(UISlider *)sender {
-    BOOL radiusRow = sender.tag == KSBallAppearanceRowHandleTouchRadius;
-    CGFloat value = radiusRow ? round(sender.value) : round(sender.value * 20.0) / 20.0;
+    CGFloat value = round(sender.value * 20.0) / 20.0;
     NSIndexPath *indexPath = [NSIndexPath indexPathForRow:sender.tag inSection:KSBallConfigurationSectionAppearance];
     UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
-    cell.detailTextLabel.text = radiusRow ? [self touchRadiusText:value] : [NSString stringWithFormat:@"%.0f%%", value * 100.0];
+    cell.detailTextLabel.text = [NSString stringWithFormat:@"%.0f%%", value * 100.0];
 
     KSBallSettings *settings = self.settingsStore.settings;
-    CGFloat current = radiusRow ? settings.handleTouchRadius : settings.backdropBlur;
+    CGFloat current = settings.backdropBlur;
     if (fabs(current - value) < 0.001) {
         return;
     }
     self.adjustingSlider = sender.isTracking;
     [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
-        if (radiusRow) {
-            settings.handleTouchRadius = value;
-        } else {
-            settings.backdropBlur = value;
-        }
+        settings.backdropBlur = value;
+    }];
+    self.adjustingSlider = NO;
+}
+
+- (void)triggerAreaSizeChanged:(UISlider *)sender {
+    CGFloat value = round(sender.value);
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:KSBallTriggerRowAreaSize inSection:KSBallConfigurationSectionTrigger];
+    UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+    cell.detailTextLabel.text = [self touchRadiusText:value];
+
+    if (fabs(self.settingsStore.settings.handleTouchRadius - value) < 0.001) {
+        return;
+    }
+    self.adjustingSlider = sender.isTracking;
+    [self.settingsStore mutateSettings:^(KSBallSettings *settings) {
+        settings.handleTouchRadius = value;
     }];
     self.adjustingSlider = NO;
 }
