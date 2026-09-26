@@ -144,7 +144,7 @@ typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
         case KSBallConfigurationSectionHUD:
             return @"悬浮条位于屏幕边缘内侧。从悬浮条向内滑动展开扇形菜单，滑到图标上会显示名称并震动，松手即启动；在空白处松手则取消。长按不移动回到此设置页，长按后拖动可调整位置。锁屏界面会自动隐藏悬浮条。";
         case KSBallConfigurationSectionTrigger:
-            return @"把手模式沿用当前可拖动悬浮条，热区为矩形。固定位置模式可同时启用多个屏幕角落，热区为圆形；水平和垂直内缩会统一应用到所有已选角落。关闭横屏触发后，横屏时不会拦截游戏触摸。";
+            return @"把手模式沿用当前可拖动悬浮条，热区为矩形。固定位置模式可同时启用多个屏幕角落，热区为圆形并自动避开系统边缘手势；水平和垂直内缩会在安全距离基础上统一应用到所有已选角落。关闭横屏触发后，横屏时不会拦截游戏触摸。";
         case KSBallConfigurationSectionAppearance:
             return @"“自动”跟随系统的浅色/深色模式。悬浮条设为隐藏后，边缘的触摸区域仍然有效。模糊程度控制毛玻璃的模糊强度，调整时会实时预览。";
         case KSBallConfigurationSectionLayout:
