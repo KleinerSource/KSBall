@@ -40,6 +40,8 @@
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>3</string>
+    <key>KSBallUpdateChannel</key>
+    <string>dev</string>
     <key>LSApplicationQueriesSchemes</key>
     <array>
         <string>ksball</string>

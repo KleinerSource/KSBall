@@ -52,7 +52,8 @@ typedef NS_ENUM(NSInteger, KSBallShortcutActionRow) {
 typedef NS_ENUM(NSInteger, KSBallUpdateRow) {
     KSBallUpdateRowCheck = 0,
     KSBallUpdateRowAutomatic = 1,
-    KSBallUpdateRowCount = 2,
+    KSBallUpdateRowBeta = 2,
+    KSBallUpdateRowCount = 3,
 };
 
 typedef NS_ENUM(NSInteger, KSBallSupportRow) {
@@ -151,6 +152,8 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
             return @"在“调整顺序”中以扇形预览长按拖动图标即可排序，靠前的应用位于靠近悬浮条的内圈。左滑应用可删除。\n\n使用扇形菜单时，选中应用并等待设定时间，图标右下角出现窗口标识后松手，即以悬浮窗打开；悬浮窗可拖动标题栏移动、拖右下角缩放，也可收进边栏。最多同时悬浮 3 个应用。";
         case KSBallConfigurationSectionSupport:
             return @"KSBall 只应通过 TrollStore 安装。私有能力不可用时，配置仍会保留。";
+        case KSBallConfigurationSectionUpdate:
+            return @"开启“检查开发版更新”后会检查 dev 通道；关闭后检查标准版 latest。切换回标准版时允许安装较低版本。更新通过 TrollStore 安装。";
         default: {
             // 页面最底部显示版本号与开发者。
             NSDictionary *info = NSBundle.mainBundle.infoDictionary;
@@ -376,6 +379,29 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
 }
 
 - (UITableViewCell *)updateCellForRow:(NSInteger)row {
+    if (row == KSBallUpdateRowCheck) {
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"CheckUpdateCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"CheckUpdateCell"];
+        cell.textLabel.text = @"检查更新";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        [self configureCheckUpdateCell:cell];
+        return cell;
+    }
+
+    if (row == KSBallUpdateRowBeta) {
+        UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"BetaUpdateCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"BetaUpdateCell"];
+        cell.textLabel.text = @"检查开发版更新";
+        UISwitch *toggle = [cell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)cell.accessoryView : nil;
+        if (!toggle) {
+            toggle = [UISwitch new];
+            [toggle addTarget:self action:@selector(toggleBetaUpdateCheck:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = toggle;
+        }
+        toggle.on = self.updateChecker.betaUpdatesEnabled;
+        toggle.enabled = !self.updateChecker.isChecking;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        return cell;
+    }
+
     if (row == KSBallUpdateRowAutomatic) {
         UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"AutomaticUpdateCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"AutomaticUpdateCell"];
         cell.textLabel.text = @"自动检查更新";
@@ -390,11 +416,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         return cell;
     }
 
-    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"CheckUpdateCell"] ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"CheckUpdateCell"];
-    cell.textLabel.text = @"检查更新";
-    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    [self configureCheckUpdateCell:cell];
-    return cell;
+    return [UITableViewCell new];
 }
 
 - (void)configureCheckUpdateCell:(UITableViewCell *)cell {
@@ -406,7 +428,8 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     } else if (checker.lastError) {
         cell.detailTextLabel.text = @"检查失败";
     } else if (release) {
-        cell.detailTextLabel.text = hasUpdate ? [NSString stringWithFormat:@"发现新版本 %@", release.version.displayString] : @"已是最新版本";
+        NSString *channelName = checker.betaUpdatesEnabled ? @"开发版" : @"标准版";
+        cell.detailTextLabel.text = hasUpdate ? [NSString stringWithFormat:@"发现%@ %@", channelName, release.version.displayString] : @"已是最新版本";
     } else {
         cell.detailTextLabel.text = nil;
     }
@@ -534,6 +557,11 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     [self checkForUpdatesAutomatically];
 }
 
+- (void)toggleBetaUpdateCheck:(UISwitch *)sender {
+    self.updateChecker.betaUpdatesEnabled = sender.isOn;
+    [self checkForUpdatesManually];
+}
+
 // 打开配置页或回到前台时静默检查。成功后一段时间内不再请求；失败（如首次联网等待授权）则在下次回到前台时重试。
 - (void)checkForUpdatesAutomatically {
     KSBallUpdateChecker *checker = self.updateChecker;
@@ -574,9 +602,15 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         notes = [[notes substringWithRange:range] stringByAppendingString:@"…"];
     }
     NSString *message = [NSString stringWithFormat:@"新版本：%@\n当前版本：%@\n\n%@", release.version.displayString, self.updateChecker.currentVersion.displayString, notes];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"发现新版本" message:message preferredStyle:UIAlertControllerStyleAlert];
+    BOOL betaRelease = [release.tagName isEqualToString:@"dev"];
+    NSComparisonResult versionOrder = [release.version compare:self.updateChecker.currentVersion];
+    BOOL downgrade = !betaRelease && versionOrder == NSOrderedAscending;
+    BOOL channelSwitch = !betaRelease && versionOrder == NSOrderedSame;
+    NSString *title = downgrade || channelSwitch ? @"切换到标准版" : (betaRelease ? @"发现开发版更新" : @"发现标准版更新");
+    NSString *installTitle = downgrade ? @"降级到标准版" : (channelSwitch ? @"安装标准版" : @"立即更新");
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
-    UIAlertAction *installAction = [UIAlertAction actionWithTitle:@"立即更新" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+    UIAlertAction *installAction = [UIAlertAction actionWithTitle:installTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
         [weakSelf installRelease:release];
     }];
     [alert addAction:installAction];
@@ -610,6 +644,10 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
     if (cell) {
         [self configureCheckUpdateCell:cell];
     }
+    NSIndexPath *betaIndexPath = [NSIndexPath indexPathForRow:KSBallUpdateRowBeta inSection:KSBallConfigurationSectionUpdate];
+    UITableViewCell *betaCell = [self.tableView cellForRowAtIndexPath:betaIndexPath];
+    UISwitch *toggle = [betaCell.accessoryView isKindOfClass:UISwitch.class] ? (UISwitch *)betaCell.accessoryView : nil;
+    toggle.enabled = !self.updateChecker.isChecking;
 }
 
 #pragma mark - 辅助
