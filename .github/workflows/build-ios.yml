@@ -213,7 +213,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add KSBall/Info.plist
           git commit -m "chore: bump build metadata to ${VERSION} [skip ci]"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
 
       - name: Publish release
         env:
