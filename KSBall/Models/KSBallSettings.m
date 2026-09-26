@@ -67,6 +67,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 + (instancetype)defaultSettings {
     KSBallSettings *settings = [self new];
     settings.enabled = YES;
+    settings.menuTriggerMode = KSBallMenuTriggerModeHandle;
+    settings.fixedTriggerCorners = KSBallFixedTriggerCornerBottomRight;
+    settings.landscapeTriggerEnabled = YES;
     settings.edge = KSBallEdgeRight;
     settings.normalizedVerticalPosition = 0.5;
     settings.shortcuts = [NSMutableArray array];
@@ -91,6 +94,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 - (id)copyWithZone:(NSZone *)zone {
     KSBallSettings *copy = [[[self class] allocWithZone:zone] init];
     copy.enabled = self.enabled;
+    copy.menuTriggerMode = self.menuTriggerMode;
+    copy.fixedTriggerCorners = self.fixedTriggerCorners;
+    copy.landscapeTriggerEnabled = self.landscapeTriggerEnabled;
     copy.edge = self.edge;
     copy.normalizedVerticalPosition = self.normalizedVerticalPosition;
     copy.iconSize = self.iconSize;
@@ -107,6 +113,13 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
 }
 
 - (void)normalize {
+    if (self.menuTriggerMode != KSBallMenuTriggerModeHandle && self.menuTriggerMode != KSBallMenuTriggerModeFixedCorners) {
+        self.menuTriggerMode = KSBallMenuTriggerModeHandle;
+    }
+    self.fixedTriggerCorners &= KSBallFixedTriggerCornerAll;
+    if (self.fixedTriggerCorners == 0) {
+        self.fixedTriggerCorners = KSBallFixedTriggerCornerBottomRight;
+    }
     self.normalizedVerticalPosition = MIN(MAX(self.normalizedVerticalPosition, 0.0), 1.0);
     self.edge = self.edge == KSBallEdgeLeft ? KSBallEdgeLeft : KSBallEdgeRight;
     self.iconSize = isfinite(self.iconSize) ? MIN(MAX(self.iconSize, KSBallMinimumIconSize), KSBallMaximumIconSize) : KSBallDefaultIconSize;
@@ -146,6 +159,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     return @{
         @"schemaVersion": @(KSBallSettingsSchemaVersion),
         @"enabled": @(self.enabled),
+        @"menuTriggerMode": @(self.menuTriggerMode),
+        @"fixedTriggerCorners": @(self.fixedTriggerCorners),
+        @"landscapeTriggerEnabled": @(self.landscapeTriggerEnabled),
         @"edge": @(self.edge),
         @"normalizedVerticalPosition": @(self.normalizedVerticalPosition),
         @"iconSize": @(self.iconSize),
@@ -169,6 +185,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
         return [dictionary[key] isKindOfClass:NSNumber.class] ? dictionary[key] : nil;
     };
     NSNumber *enabled = number(@"enabled");
+    NSNumber *menuTriggerMode = number(@"menuTriggerMode");
+    NSNumber *fixedTriggerCorners = number(@"fixedTriggerCorners");
+    NSNumber *landscapeTriggerEnabled = number(@"landscapeTriggerEnabled");
     NSNumber *edge = number(@"edge");
     NSNumber *verticalPosition = number(@"normalizedVerticalPosition");
     NSNumber *iconSize = number(@"iconSize");
@@ -180,6 +199,9 @@ static NSInteger const KSBallSettingsSchemaVersion = 1;
     NSNumber *backdropStyle = number(@"backdropStyle");
     NSNumber *backdropBlur = number(@"backdropBlur");
     if (enabled) settings.enabled = enabled.boolValue;
+    if (menuTriggerMode) settings.menuTriggerMode = menuTriggerMode.integerValue;
+    if (fixedTriggerCorners) settings.fixedTriggerCorners = fixedTriggerCorners.unsignedIntegerValue;
+    if (landscapeTriggerEnabled) settings.landscapeTriggerEnabled = landscapeTriggerEnabled.boolValue;
     if (edge) settings.edge = edge.integerValue;
     if (verticalPosition) settings.normalizedVerticalPosition = verticalPosition.doubleValue;
     if (iconSize) settings.iconSize = iconSize.doubleValue;
