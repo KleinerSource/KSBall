@@ -14,6 +14,11 @@ static const CGFloat KSBallDragActivationDistance = 8.0;
 static const CGFloat KSBallPreviewIconSize = 108.0;
 // 悬浮窗口模式标识相对当前图标的尺寸。
 static const CGFloat KSBallFloatingBadgeRatio = 0.38;
+static const CGFloat KSBallFixedTriggerMinimumHorizontalInset = 28.0;
+static const CGFloat KSBallFixedTriggerMinimumTopInset = 32.0;
+static const CGFloat KSBallFixedTriggerMinimumBottomInset = 24.0;
+static const CGFloat KSBallFixedTriggerSafeAreaPadding = 8.0;
+static const CGFloat KSBallFixedTriggerBottomSafeAreaPadding = 2.0;
 // 配置变化后扇形菜单与触摸范围的预览停留时间。
 static const NSTimeInterval KSBallMenuPreviewDuration = 1.6;
 static const char * const KSBallLockStateNotification = "com.apple.springboard.lockstate";
@@ -96,6 +101,7 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 @property (nonatomic) CGFloat appliedHandleTouchRadius;
 @property (nonatomic) CGPoint activeMenuAnchor;
 @property (nonatomic) KSBallEdge activeMenuEdge;
+@property (nonatomic) KSBallFixedTriggerCorner activeMenuCorner;
 @property (nonatomic) BOOL hasActiveMenuAnchor;
 @property (nonatomic) BOOL dragging;
 @property (nonatomic) BOOL dragMoved;
@@ -105,6 +111,7 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 - (void)cancelFloatingModeTimer;
 - (void)startFloatingModeTimerForItemView:(UIView *)itemView;
 - (UIView *)floatingBadgeViewForItemSize:(CGFloat)itemSize;
+- (CGRect)menuSafeBounds;
 @end
 
 @implementation FloatingHUDViewController
@@ -437,8 +444,13 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
         CGFloat diameter = settings.handleTouchRadius * 2.0;
         CGFloat maxX = MAX(0.0, CGRectGetWidth(bounds) - diameter);
         CGFloat maxY = MAX(0.0, CGRectGetHeight(bounds) - diameter);
-        CGFloat x = left ? settings.fixedTriggerHorizontalInset : CGRectGetWidth(bounds) - settings.fixedTriggerHorizontalInset - diameter;
-        CGFloat y = top ? settings.fixedTriggerVerticalInset : CGRectGetHeight(bounds) - settings.fixedTriggerVerticalInset - diameter;
+        UIEdgeInsets safeAreaInsets = self.view.safeAreaInsets;
+        CGFloat leftInset = MAX(KSBallFixedTriggerMinimumHorizontalInset, safeAreaInsets.left + KSBallFixedTriggerSafeAreaPadding);
+        CGFloat rightInset = MAX(KSBallFixedTriggerMinimumHorizontalInset, safeAreaInsets.right + KSBallFixedTriggerSafeAreaPadding);
+        CGFloat topInset = MAX(KSBallFixedTriggerMinimumTopInset, safeAreaInsets.top + KSBallFixedTriggerSafeAreaPadding);
+        CGFloat bottomInset = MAX(KSBallFixedTriggerMinimumBottomInset, safeAreaInsets.bottom + KSBallFixedTriggerBottomSafeAreaPadding);
+        CGFloat x = left ? leftInset + settings.fixedTriggerHorizontalInset : CGRectGetWidth(bounds) - rightInset - settings.fixedTriggerHorizontalInset - diameter;
+        CGFloat y = top ? topInset + settings.fixedTriggerVerticalInset : CGRectGetHeight(bounds) - bottomInset - settings.fixedTriggerVerticalInset - diameter;
         x = MIN(MAX(x, 0.0), maxX);
         y = MIN(MAX(y, 0.0), maxY);
         triggerView.frame = CGRectMake(x, y, diameter, diameter);
@@ -556,19 +568,31 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
 }
 
 - (void)prepareMenuAnchorForTriggerView:(UIView *)triggerView {
+    self.activeMenuCorner = 0;
     if (triggerView == self.handleView) {
         self.activeMenuAnchor = [self barCenter];
         self.activeMenuEdge = [self currentEdge];
     } else {
         KSBallFixedTriggerCorner corner = triggerView.tag;
+        self.activeMenuCorner = corner;
         self.activeMenuAnchor = triggerView.center;
         self.activeMenuEdge = corner == KSBallFixedTriggerCornerTopLeft || corner == KSBallFixedTriggerCornerBottomLeft ? KSBallEdgeLeft : KSBallEdgeRight;
     }
     self.hasActiveMenuAnchor = YES;
+    if (self.activeMenuCorner == KSBallFixedTriggerCornerBottomLeft || self.activeMenuCorner == KSBallFixedTriggerCornerBottomRight) {
+        CGFloat menuBottom = CGRectGetMaxY([self menuSafeBounds]);
+        self.activeMenuAnchor = CGPointMake(self.activeMenuAnchor.x, menuBottom - self.settingsStore.settings.iconSize / 2.0);
+    }
 }
 
 - (CGRect)menuSafeBounds {
-    return [KSBallFanLayout menuSafeBoundsForBounds:self.view.bounds safeAreaInsets:self.view.safeAreaInsets];
+    CGRect bounds = [KSBallFanLayout menuSafeBoundsForBounds:self.view.bounds safeAreaInsets:self.view.safeAreaInsets];
+    BOOL bottomLeft = self.activeMenuCorner == KSBallFixedTriggerCornerBottomLeft;
+    BOOL bottomRight = self.activeMenuCorner == KSBallFixedTriggerCornerBottomRight;
+    if (self.hasActiveMenuAnchor && (bottomLeft || bottomRight)) {
+        bounds.size.height += 8.0;
+    }
+    return bounds;
 }
 
 #pragma mark - 扇形菜单
