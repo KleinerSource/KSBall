@@ -21,6 +21,7 @@ FOUNDATION_EXPORT const CGFloat KSBallDefaultHandleTouchRadius;
 FOUNDATION_EXPORT const CGFloat KSBallMinimumFloatingWindowDwellDuration;
 FOUNDATION_EXPORT const CGFloat KSBallMaximumFloatingWindowDwellDuration;
 FOUNDATION_EXPORT const CGFloat KSBallDefaultFloatingWindowDwellDuration;
+FOUNDATION_EXPORT const CGFloat KSBallMinimumFixedTriggerInset;
 FOUNDATION_EXPORT const CGFloat KSBallMaximumFixedTriggerInset;
 
 typedef NS_ENUM(NSInteger, KSBallEdge) {

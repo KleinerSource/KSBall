@@ -283,7 +283,7 @@ typedef NS_ENUM(NSInteger, KSBallSupportRow) {
         UISlider *slider = [cell.accessoryView isKindOfClass:UISlider.class] ? (UISlider *)cell.accessoryView : nil;
         if (!slider) {
             slider = [[UISlider alloc] initWithFrame:CGRectMake(0.0, 0.0, 150.0, 32.0)];
-            slider.minimumValue = 0.0;
+            slider.minimumValue = KSBallMinimumFixedTriggerInset;
             slider.maximumValue = KSBallMaximumFixedTriggerInset;
             slider.tag = row;
             [slider addTarget:self action:@selector(fixedTriggerInsetChanged:) forControlEvents:UIControlEventValueChanged];

@@ -442,8 +442,6 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
         BOOL left = corner == KSBallFixedTriggerCornerTopLeft || corner == KSBallFixedTriggerCornerBottomLeft;
         BOOL top = corner == KSBallFixedTriggerCornerTopLeft || corner == KSBallFixedTriggerCornerTopRight;
         CGFloat diameter = settings.handleTouchRadius * 2.0;
-        CGFloat maxX = MAX(0.0, CGRectGetWidth(bounds) - diameter);
-        CGFloat maxY = MAX(0.0, CGRectGetHeight(bounds) - diameter);
         UIEdgeInsets safeAreaInsets = self.view.safeAreaInsets;
         CGFloat leftInset = MAX(KSBallFixedTriggerMinimumHorizontalInset, safeAreaInsets.left + KSBallFixedTriggerSafeAreaPadding);
         CGFloat rightInset = MAX(KSBallFixedTriggerMinimumHorizontalInset, safeAreaInsets.right + KSBallFixedTriggerSafeAreaPadding);
@@ -451,8 +449,6 @@ typedef NS_ENUM(NSInteger, KSBallResolvedAppearance) {
         CGFloat bottomInset = MAX(KSBallFixedTriggerMinimumBottomInset, safeAreaInsets.bottom + KSBallFixedTriggerBottomSafeAreaPadding);
         CGFloat x = left ? leftInset + settings.fixedTriggerHorizontalInset : CGRectGetWidth(bounds) - rightInset - settings.fixedTriggerHorizontalInset - diameter;
         CGFloat y = top ? topInset + settings.fixedTriggerVerticalInset : CGRectGetHeight(bounds) - bottomInset - settings.fixedTriggerVerticalInset - diameter;
-        x = MIN(MAX(x, 0.0), maxX);
-        y = MIN(MAX(y, 0.0), maxY);
         triggerView.frame = CGRectMake(x, y, diameter, diameter);
         triggerView.layer.cornerRadius = diameter / 2.0;
         triggerView.clipsToBounds = YES;
